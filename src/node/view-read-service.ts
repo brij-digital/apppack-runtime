@@ -873,11 +873,18 @@ export class AppPackViewReadService {
     commitment: Commitment,
   ): Promise<Array<{ pubkey: string; data: Buffer }>> {
     const pageSize = 1_000;
+    const maxPages = 10_000;
+    let pages = 0;
     let paginationKey: string | null = null;
+    const seenPaginationKeys = new Set<string>();
     const out = new Map<string, Buffer>();
 
     // No fallback path by design: this service expects getProgramAccountsV2 support.
     for (;;) {
+      pages += 1;
+      if (pages > maxPages) {
+        throw new Error(`getProgramAccountsV2 exceeded max pages (${maxPages}) for ${this.compiled.namespace}.`);
+      }
       const config: Record<string, unknown> = {
         commitment,
         encoding: 'base64',
@@ -894,6 +901,9 @@ export class AppPackViewReadService {
         config,
       ]);
       const pageAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+      if (pageAccounts.length === 0) {
+        break;
+      }
       for (const account of pageAccounts) {
         if (!account || typeof account.pubkey !== 'string' || !account.account || account.account.data === undefined) {
           continue;
@@ -909,6 +919,10 @@ export class AppPackViewReadService {
       if (!nextKey) {
         break;
       }
+      if (seenPaginationKeys.has(nextKey)) {
+        break;
+      }
+      seenPaginationKeys.add(nextKey);
       paginationKey = nextKey;
     }
 
