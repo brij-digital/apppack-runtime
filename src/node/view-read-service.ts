@@ -90,6 +90,12 @@ type ReadResult = {
   generatedAtMs: number;
 };
 
+type IndexedEntityRecord = {
+  entityId: string;
+  payload: Record<string, unknown>;
+  slot: number;
+};
+
 type CacheEntry = {
   expiresAtMs: number;
   value: ReadResult;
@@ -457,6 +463,10 @@ export class AppPackViewReadService {
     return { entries: this.cache.size };
   }
 
+  getNamespace(): string {
+    return this.compiled.namespace;
+  }
+
   async runRead(options: ListPoolsOptions): Promise<ReadResult> {
     const resolvedInput = this.resolveOperationInput(options.input);
     const effectiveLimit = Math.max(1, Math.min(options.limit, this.compiled.outputMaxItems));
@@ -603,6 +613,52 @@ export class AppPackViewReadService {
       return;
     }
     await this.pool.end();
+  }
+
+  async upsertIndexedRecords(records: IndexedEntityRecord[]): Promise<{ upserted: number; maxSlot: number }> {
+    if (!this.pool) {
+      throw new Error(`Cannot upsert indexed records for ${this.compiled.namespace}: DATABASE_URL is not configured.`);
+    }
+    if (records.length === 0) {
+      return { upserted: 0, maxSlot: 0 };
+    }
+
+    const normalized: IndexedEntityRecord[] = [];
+    let maxSlot = 0;
+    for (const record of records) {
+      if (!record || typeof record !== 'object') {
+        continue;
+      }
+      const entityId = String(record.entityId ?? '');
+      if (entityId.length === 0) {
+        continue;
+      }
+      if (!record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload)) {
+        continue;
+      }
+      const slot = Number.parseInt(String(record.slot), 10);
+      if (!Number.isFinite(slot) || slot <= 0) {
+        continue;
+      }
+      if (slot > maxSlot) {
+        maxSlot = slot;
+      }
+      normalized.push({
+        entityId,
+        payload: record.payload,
+        slot,
+      });
+    }
+
+    if (normalized.length === 0) {
+      return { upserted: 0, maxSlot };
+    }
+
+    const upserted = await this.upsertRecordsWithSlot(normalized);
+    if (upserted > 0) {
+      this.clearCache();
+    }
+    return { upserted, maxSlot };
   }
 
   private makeCacheKey(input: Record<string, unknown>, limit: number): string {
@@ -1030,6 +1086,10 @@ export class AppPackViewReadService {
   }
 
   private async upsertRecords(records: Array<{ entityId: string; payload: Record<string, unknown> }>, slot: number): Promise<number> {
+    return this.upsertRecordsWithSlot(records.map((record) => ({ ...record, slot })));
+  }
+
+  private async upsertRecordsWithSlot(records: IndexedEntityRecord[]): Promise<number> {
     if (!this.pool || records.length === 0) {
       return 0;
     }
@@ -1047,7 +1107,12 @@ export class AppPackViewReadService {
       `;
 
       for (const record of records) {
-        await client.query(sql, [this.compiled.namespace, record.entityId, slot, JSON.stringify(record.payload)]);
+        await client.query(sql, [
+          this.compiled.namespace,
+          record.entityId,
+          record.slot,
+          JSON.stringify(record.payload),
+        ]);
       }
 
       await client.query('COMMIT');
