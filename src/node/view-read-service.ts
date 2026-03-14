@@ -150,6 +150,19 @@ type CompiledOperation = {
   operationInputDefs: Record<string, OperationInputDef>;
 };
 
+type RpcV2AccountEntry = {
+  pubkey: string;
+  account: {
+    data: string | [string, string];
+  };
+};
+
+type RpcV2GetProgramAccountsResult = {
+  accounts: RpcV2AccountEntry[];
+  paginationKey?: string | null;
+  count?: number;
+};
+
 const LEGACY_ORCA_POOLS_TABLE = 'orca_pools';
 const LEGACY_ORCA_HISTORY_TABLE = 'orca_pool_history';
 
@@ -713,12 +726,9 @@ export class AppPackViewReadService {
         ...(this.compiled.discriminatorFilter ? [this.compiled.discriminatorFilter] : []),
         ...groupFilters,
       ];
-      const accounts = await this.connection.getProgramAccounts(this.compiled.programId, {
-        commitment: step.commitment ?? 'confirmed',
-        filters,
-      });
+      const accounts = await this.getProgramAccountsViaV2(filters, step.commitment ?? 'confirmed');
       for (const account of accounts) {
-        accountsByPubkey.set(account.pubkey.toBase58(), account.account.data);
+        accountsByPubkey.set(account.pubkey, account.data);
       }
     }
 
@@ -809,6 +819,100 @@ export class AppPackViewReadService {
       out.push(filters);
     }
     return out;
+  }
+
+  private async rpcRequest<T>(method: string, params: unknown[]): Promise<T> {
+    const response = await fetch(this.connection.rpcEndpoint, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: `${method}-${Date.now()}`,
+        method,
+        params,
+      }),
+    });
+
+    let payload: { result?: T; error?: { code?: number; message?: string; data?: unknown } };
+    try {
+      payload = (await response.json()) as { result?: T; error?: { code?: number; message?: string; data?: unknown } };
+    } catch {
+      throw new Error(`${method} failed: RPC response is not valid JSON.`);
+    }
+
+    if (!response.ok) {
+      const details = payload?.error?.message ?? response.statusText;
+      throw new Error(`${method} failed (${response.status}): ${details}`);
+    }
+    if (payload.error) {
+      const code = payload.error.code ?? 'unknown';
+      const message = payload.error.message ?? 'Unknown RPC error.';
+      throw new Error(`${method} RPC error (${code}): ${message}`);
+    }
+    if (payload.result === undefined) {
+      throw new Error(`${method} failed: missing result in RPC response.`);
+    }
+    return payload.result;
+  }
+
+  private decodeBase64AccountData(value: string | [string, string]): Buffer {
+    if (Array.isArray(value)) {
+      const [encoded, encoding] = value;
+      if (encoding !== 'base64') {
+        throw new Error(`Unsupported account data encoding from getProgramAccountsV2: ${encoding}`);
+      }
+      return Buffer.from(encoded, 'base64');
+    }
+    return Buffer.from(value, 'base64');
+  }
+
+  private async getProgramAccountsViaV2(
+    filters: GetProgramAccountsFilter[],
+    commitment: Commitment,
+  ): Promise<Array<{ pubkey: string; data: Buffer }>> {
+    const pageSize = 1_000;
+    let paginationKey: string | null = null;
+    const out = new Map<string, Buffer>();
+
+    // No fallback path by design: this service expects getProgramAccountsV2 support.
+    for (;;) {
+      const config: Record<string, unknown> = {
+        commitment,
+        encoding: 'base64',
+        withContext: false,
+        filters,
+        limit: pageSize,
+      };
+      if (paginationKey) {
+        config.paginationKey = paginationKey;
+      }
+
+      const result = await this.rpcRequest<RpcV2GetProgramAccountsResult>('getProgramAccountsV2', [
+        this.compiled.programId.toBase58(),
+        config,
+      ]);
+      const pageAccounts = Array.isArray(result.accounts) ? result.accounts : [];
+      for (const account of pageAccounts) {
+        if (!account || typeof account.pubkey !== 'string' || !account.account || account.account.data === undefined) {
+          continue;
+        }
+        try {
+          out.set(account.pubkey, this.decodeBase64AccountData(account.account.data));
+        } catch {
+          continue;
+        }
+      }
+
+      const nextKey = typeof result.paginationKey === 'string' && result.paginationKey.length > 0 ? result.paginationKey : null;
+      if (!nextKey) {
+        break;
+      }
+      paginationKey = nextKey;
+    }
+
+    return Array.from(out.entries()).map(([pubkey, data]) => ({ pubkey, data }));
   }
 
   private matchesWhere(whereClauses: DiscoverWhereClause[], row: DecodedAccountContext): boolean {
