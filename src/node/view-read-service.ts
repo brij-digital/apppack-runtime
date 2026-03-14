@@ -149,6 +149,7 @@ type CompiledOperation = {
   liquidityField: string | null;
   pairParamA: string | null;
   pairParamB: string | null;
+  paramFieldMap: Record<string, string>;
   programId: PublicKey;
   accountType: string;
   accountSize: number;
@@ -326,6 +327,38 @@ function inferPairParams(step: DiscoverQueryStep): [string | null, string | null
   return [null, null];
 }
 
+function inferParamFieldMap(step: DiscoverQueryStep): Record<string, string> {
+  const map: Record<string, string> = {};
+  const findSelectFieldForDecodedPath = (decodedPath: string): string | null => {
+    const expression = `$decoded.${decodedPath}`;
+    return pickFieldBySelectValue(step.select, expression);
+  };
+
+  for (const clause of step.where ?? []) {
+    if (clause.op !== '=') {
+      continue;
+    }
+    if (typeof clause.value !== 'string' || !clause.value.startsWith('$param.')) {
+      continue;
+    }
+    if (!clause.path.startsWith('decoded.')) {
+      continue;
+    }
+    const paramName = clause.value.slice('$param.'.length);
+    const decodedPath = clause.path.slice('decoded.'.length);
+    if (!paramName || !decodedPath) {
+      continue;
+    }
+    const field = findSelectFieldForDecodedPath(decodedPath);
+    if (!field) {
+      continue;
+    }
+    map[paramName] = field;
+  }
+
+  return map;
+}
+
 function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: AppPackViewReadServiceOptions): CompiledOperation {
   const operation = meta.operations?.[options.operationId];
   if (!operation) {
@@ -355,6 +388,7 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
   const tokenMintFieldB = pickFieldBySelectValue(discoverStep.select, '$decoded.token_mint_b');
   const liquidityField = pickFieldBySelectValue(discoverStep.select, '$decoded.liquidity');
   const [pairParamA, pairParamB] = inferPairParams(discoverStep);
+  const paramFieldMap = inferParamFieldMap(discoverStep);
 
   return {
     protocolId: meta.protocolId,
@@ -369,6 +403,7 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
     liquidityField,
     pairParamA,
     pairParamB,
+    paramFieldMap,
     programId: parsePublicKey(options.programId, 'programId'),
     accountType: discoverStep.account_type,
     accountSize: coder.size(discoverStep.account_type),
@@ -720,39 +755,91 @@ export class AppPackViewReadService {
     if (!this.pool) {
       return null;
     }
-    if (!this.compiled.tokenMintFieldA || !this.compiled.tokenMintFieldB || !this.compiled.liquidityField) {
-      return null;
-    }
-    if (!this.compiled.pairParamA || !this.compiled.pairParamB) {
-      return null;
-    }
-    const tokenIn = input[this.compiled.pairParamA];
-    const tokenOut = input[this.compiled.pairParamB];
-    if (typeof tokenIn !== 'string' || typeof tokenOut !== 'string') {
-      return null;
+    let result:
+      | {
+          rows: Array<{ entity_id: string; slot: string; payload: unknown }>;
+        }
+      | null = null;
+
+    if (
+      this.compiled.tokenMintFieldA &&
+      this.compiled.tokenMintFieldB &&
+      this.compiled.liquidityField &&
+      this.compiled.pairParamA &&
+      this.compiled.pairParamB
+    ) {
+      const tokenIn = input[this.compiled.pairParamA];
+      const tokenOut = input[this.compiled.pairParamB];
+      if (typeof tokenIn === 'string' && typeof tokenOut === 'string') {
+        const query = `
+          SELECT entity_id, slot::text AS slot, payload
+          FROM view_entities
+          WHERE namespace = $1
+            AND (
+              ((payload->>$2) = $3 AND (payload->>$4) = $5)
+              OR
+              ((payload->>$2) = $5 AND (payload->>$4) = $3)
+            )
+          ORDER BY COALESCE(NULLIF(payload->>$6, '')::numeric, 0) DESC, entity_id ASC
+          LIMIT $7
+        `;
+        result = await this.pool.query<{ entity_id: string; slot: string; payload: unknown }>(query, [
+          this.compiled.namespace,
+          this.compiled.tokenMintFieldA,
+          tokenIn,
+          this.compiled.tokenMintFieldB,
+          tokenOut,
+          this.compiled.liquidityField,
+          limit,
+        ]);
+      }
     }
 
-    const query = `
-      SELECT entity_id, slot::text AS slot, payload
-      FROM view_entities
-      WHERE namespace = $1
-        AND (
-          ((payload->>$2) = $3 AND (payload->>$4) = $5)
-          OR
-          ((payload->>$2) = $5 AND (payload->>$4) = $3)
-        )
-      ORDER BY COALESCE(NULLIF(payload->>$6, '')::numeric, 0) DESC, entity_id ASC
-      LIMIT $7
-    `;
-    const result = await this.pool.query<{ entity_id: string; slot: string; payload: unknown }>(query, [
-      this.compiled.namespace,
-      this.compiled.tokenMintFieldA,
-      tokenIn,
-      this.compiled.tokenMintFieldB,
-      tokenOut,
-      this.compiled.liquidityField,
-      limit,
-    ]);
+    if (!result && Object.keys(this.compiled.paramFieldMap).length > 0) {
+      const clauses: string[] = [`namespace = $1`];
+      const params: unknown[] = [this.compiled.namespace];
+      for (const [paramName, fieldName] of Object.entries(this.compiled.paramFieldMap)) {
+        const value = input[paramName];
+        if (typeof value !== 'string') {
+          continue;
+        }
+        clauses.push(`(payload->>$${params.length + 1}) = $${params.length + 2}`);
+        params.push(fieldName, value);
+      }
+      if (clauses.length > 1) {
+        const hasLiquiditySort = typeof this.compiled.liquidityField === 'string' && this.compiled.liquidityField.length > 0;
+        const orderBy = hasLiquiditySort
+          ? `COALESCE(NULLIF(payload->>$${params.length + 1}, '')::numeric, 0) DESC, entity_id ASC`
+          : `slot DESC, entity_id ASC`;
+        if (hasLiquiditySort) {
+          params.push(this.compiled.liquidityField as string);
+        }
+        params.push(limit);
+        const query = `
+          SELECT entity_id, slot::text AS slot, payload
+          FROM view_entities
+          WHERE ${clauses.join(' AND ')}
+          ORDER BY ${orderBy}
+          LIMIT $${params.length}
+        `;
+        result = await this.pool.query<{ entity_id: string; slot: string; payload: unknown }>(query, params);
+      }
+    }
+
+    if (!result) {
+      const query = `
+        SELECT entity_id, slot::text AS slot, payload
+        FROM view_entities
+        WHERE namespace = $1
+        ORDER BY slot DESC, entity_id ASC
+        LIMIT $2
+      `;
+      result = await this.pool.query<{ entity_id: string; slot: string; payload: unknown }>(query, [
+        this.compiled.namespace,
+        limit,
+      ]);
+    }
+
     if (result.rows.length === 0) {
       return null;
     }
