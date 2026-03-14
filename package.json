@@ -1,6 +1,6 @@
 {
   "name": "@agentform/apppack-runtime",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "type": "module",
   "main": "dist/index.js",
@@ -29,7 +29,8 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "check": "tsc --noEmit -p tsconfig.json"
+    "check": "tsc --noEmit -p tsconfig.json",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",
