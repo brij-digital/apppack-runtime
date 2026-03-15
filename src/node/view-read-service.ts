@@ -846,17 +846,6 @@ export class AppPackViewReadService {
     };
   }
 
-  private getEffectiveSortClauses(): DiscoverSortClause[] {
-    const declaredSort = this.compiled.discoverStep.sort ?? [];
-    if (declaredSort.length > 0) {
-      return declaredSort;
-    }
-    if (this.compiled.liquidityField) {
-      return [{ path: 'decoded.liquidity', dir: 'desc' }];
-    }
-    return [];
-  }
-
   private async fetchFromAccountCache(params: Record<string, unknown>, limit: number): Promise<ReadResult | null> {
     if (!this.pool) {
       return null;
@@ -922,7 +911,7 @@ export class AppPackViewReadService {
       return null;
     }
 
-    this.sortRows(rows, this.getEffectiveSortClauses());
+    this.sortRows(rows, this.compiled.discoverStep.sort ?? []);
     const limitedRows = rows.slice(0, limit);
 
     const items: Record<string, unknown>[] = [];
