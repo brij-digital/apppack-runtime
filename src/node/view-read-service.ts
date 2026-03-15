@@ -117,6 +117,7 @@ type IncrementalSyncResult = {
 type AppPackViewReadServiceOptions = {
   connection: Connection;
   databaseUrl: string | null;
+  poolOverride?: Pool | null;
   cacheTtlMs: number;
   metaPath: string;
   idlPath: string;
@@ -471,12 +472,16 @@ export class AppPackViewReadService {
   constructor(options: AppPackViewReadServiceOptions) {
     this.connection = options.connection;
     this.cacheTtlMs = options.cacheTtlMs;
-    this.pool = options.databaseUrl
-      ? new Pool({
-          connectionString: options.databaseUrl,
-          max: 4,
-        })
-      : null;
+    if (options.poolOverride) {
+      this.pool = options.poolOverride;
+    } else {
+      this.pool = options.databaseUrl
+        ? new Pool({
+            connectionString: options.databaseUrl,
+            max: 4,
+          })
+        : null;
+    }
 
     const meta = parseMetaPack(path.resolve(options.metaPath));
     const idl = parseIdl(path.resolve(options.idlPath));

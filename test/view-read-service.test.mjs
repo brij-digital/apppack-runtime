@@ -1,0 +1,215 @@
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { BN, BorshAccountsCoder } from '@coral-xyz/anchor';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { AppPackViewReadService } from '../dist/node/view-read-service.js';
+
+const PROGRAM_ID = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
+const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const MINT_SOL = 'So11111111111111111111111111111111111111112';
+
+const IDL = {
+  address: PROGRAM_ID,
+  metadata: {
+    name: 'orca_whirlpool_test',
+    version: '0.0.0',
+    spec: '0.1.0',
+  },
+  instructions: [],
+  accounts: [
+    {
+      name: 'Whirlpool',
+      discriminator: [63, 149, 209, 12, 225, 128, 99, 9],
+    },
+  ],
+  types: [
+    {
+      name: 'Whirlpool',
+      type: {
+        kind: 'struct',
+        fields: [
+          { name: 'token_mint_a', type: 'pubkey' },
+          { name: 'token_mint_b', type: 'pubkey' },
+          { name: 'tick_spacing', type: 'u16' },
+          { name: 'liquidity', type: 'u128' },
+        ],
+      },
+    },
+  ],
+};
+
+const META = {
+  schema: 'meta-idl.v0.6',
+  protocolId: 'orca-whirlpool-mainnet',
+  templates: {
+    'orca.list_pools.v1': {
+      params: {
+        token_in_mint: { type: 'pubkey' },
+        token_out_mint: { type: 'pubkey' },
+      },
+      expand: {
+        discover: [
+          {
+            name: 'pool_candidates',
+            discover: 'discover.query',
+            source: 'rpc.getProgramAccounts',
+            program_id: '$protocol.programId',
+            account_type: 'Whirlpool',
+            commitment: 'confirmed',
+            or_filters: [
+              [
+                { memcmp: { offset: 8, bytesFrom: '$param.token_in_mint' } },
+                { memcmp: { offset: 40, bytesFrom: '$param.token_out_mint' } },
+              ],
+              [
+                { memcmp: { offset: 8, bytesFrom: '$param.token_out_mint' } },
+                { memcmp: { offset: 40, bytesFrom: '$param.token_in_mint' } },
+              ],
+            ],
+            where: [
+              {
+                path: 'decoded.liquidity',
+                op: '>',
+                value: '0',
+              },
+            ],
+            sort: [
+              {
+                path: 'decoded.liquidity',
+                dir: 'desc',
+              },
+            ],
+            limit: 20,
+            select: {
+              whirlpool: '$account.pubkey',
+              tokenMintA: '$decoded.token_mint_a',
+              tokenMintB: '$decoded.token_mint_b',
+              tickSpacing: '$decoded.tick_spacing',
+              liquidity: '$decoded.liquidity',
+            },
+          },
+        ],
+      },
+    },
+  },
+  operations: {
+    list_pools: {
+      inputs: {
+        token_in_mint: { type: 'pubkey', required: true },
+        token_out_mint: { type: 'pubkey', required: true },
+      },
+      use: [
+        {
+          template: 'orca.list_pools.v1',
+          with: {
+            token_in_mint: '$input.token_in_mint',
+            token_out_mint: '$input.token_out_mint',
+          },
+        },
+      ],
+      read_output: {
+        type: 'array',
+        source: '$derived.pool_candidates',
+        max_items: 20,
+      },
+      view: {
+        entity_keys: ['whirlpool'],
+      },
+    },
+  },
+};
+
+async function writeTempJson(prefix, value) {
+  const dir = path.join(os.tmpdir(), `apppack-runtime-test-${randomUUID()}`);
+  await fs.mkdir(dir, { recursive: true });
+  const file = path.join(dir, `${prefix}.json`);
+  await fs.writeFile(file, JSON.stringify(value, null, 2), 'utf8');
+  return file;
+}
+
+test('runRead queries cached_program_accounts via binary memcmp and returns sorted selected rows', async () => {
+  const idlPath = await writeTempJson('idl', IDL);
+  const metaPath = await writeTempJson('meta', META);
+  const coder = new BorshAccountsCoder(IDL);
+
+  const dataA = await coder.encode('Whirlpool', {
+    token_mint_a: new PublicKey(MINT_USDC),
+    token_mint_b: new PublicKey(MINT_SOL),
+    tick_spacing: 4,
+    liquidity: new BN('1000000'),
+  });
+  const dataB = await coder.encode('Whirlpool', {
+    token_mint_a: new PublicKey(MINT_SOL),
+    token_mint_b: new PublicKey(MINT_USDC),
+    tick_spacing: 16,
+    liquidity: new BN('2000000'),
+  });
+
+  const capturedQueries = [];
+  const pool = {
+    async query(sql, params) {
+      capturedQueries.push({ sql: String(sql), params: params ?? [] });
+      if (String(sql).includes('FROM cached_program_accounts')) {
+        return {
+          rows: [
+            {
+              pubkey: 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE',
+              slot: '202532154',
+              data_bytes: Buffer.from(dataA),
+            },
+            {
+              pubkey: '2sZ7dw8Nfqn8mQ9QGp2PzFpvx9TLtCrzkx5hDfSE9iJY',
+              slot: '202532160',
+              data_bytes: Buffer.from(dataB),
+            },
+          ],
+          rowCount: 2,
+        };
+      }
+      return { rows: [], rowCount: 0 };
+    },
+    async end() {},
+  };
+
+  const service = new AppPackViewReadService({
+    connection: new Connection('http://127.0.0.1:8899', 'confirmed'),
+    databaseUrl: null,
+    poolOverride: pool,
+    cacheTtlMs: 1000,
+    metaPath,
+    idlPath,
+    programId: PROGRAM_ID,
+    operationId: 'list_pools',
+  });
+
+  const result = await service.runRead({
+    input: {
+      token_in_mint: MINT_USDC,
+      token_out_mint: MINT_SOL,
+    },
+    limit: 20,
+  });
+
+  assert.equal(result.items.length, 2);
+  assert.equal(result.items[0].liquidity, '2000000');
+  assert.equal(result.items[1].liquidity, '1000000');
+  assert.equal(result.items[0].whirlpool, '2sZ7dw8Nfqn8mQ9QGp2PzFpvx9TLtCrzkx5hDfSE9iJY');
+
+  const memcmpQuery = capturedQueries.find((entry) => entry.sql.includes('FROM cached_program_accounts'));
+  assert.ok(memcmpQuery, 'expected memcmp query against cached_program_accounts');
+  assert.ok(memcmpQuery.sql.includes('substring(data_bytes from'));
+  assert.ok(memcmpQuery.sql.includes("decode($"));
+  assert.ok(memcmpQuery.sql.includes(' OR '));
+
+  const tokenInHex = new PublicKey(MINT_USDC).toBuffer().toString('hex');
+  const tokenOutHex = new PublicKey(MINT_SOL).toBuffer().toString('hex');
+  const serializedParams = JSON.stringify(memcmpQuery.params);
+  assert.ok(serializedParams.includes(tokenInHex));
+  assert.ok(serializedParams.includes(tokenOutHex));
+
+  await service.close();
+});
