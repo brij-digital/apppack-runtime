@@ -70,6 +70,20 @@ type ActionInputSpec = {
   discover_from?: string;
   ui_tier?: 'enduser' | 'geek';
   ui_editable?: boolean;
+  label?: string;
+  placeholder?: string;
+  help?: string;
+  group?: string;
+  display_order?: number;
+  example?: unknown;
+  ui_example?: unknown;
+  validate?: {
+    required?: boolean;
+    min?: string | number;
+    max?: string | number;
+    pattern?: string;
+    message?: string;
+  };
 };
 
 type ReadOutputSpec = {
@@ -89,6 +103,7 @@ type ViewSpec = {
 };
 
 type ActionSpec = {
+  label?: string;
   instruction?: string;
   inputs?: Record<string, ActionInputSpec>;
   discover?: DiscoverStep[];
@@ -101,6 +116,14 @@ type ActionSpec = {
   read_output?: ReadOutputSpec;
   post?: PostInstructionSpec[];
   use?: TemplateUseSpec[];
+  validate?: {
+    cross?: Array<{
+      kind?: string;
+      left?: string;
+      right?: string;
+      message?: string;
+    }>;
+  };
 };
 
 type UserAppStepTransitionSpec = {
@@ -334,6 +357,7 @@ export type MetaOperationExplain = {
 
 export type MetaOperationSummary = {
   operationId: string;
+  label?: string;
   instruction: string;
   inputs: Record<
     string,
@@ -345,8 +369,28 @@ export type MetaOperationSummary = {
       discover_stage?: 'discover' | 'derive' | 'compute' | 'input' | 'unknown';
       ui_tier?: 'enduser' | 'geek';
       ui_editable?: boolean;
+      label?: string;
+      placeholder?: string;
+      help?: string;
+      group?: string;
+      display_order?: number;
+      example?: unknown;
+      ui_example?: unknown;
+      validate?: {
+        required?: boolean;
+        min?: string | number;
+        max?: string | number;
+        pattern?: string;
+        message?: string;
+      };
     }
   >;
+  crossValidation?: Array<{
+    kind: 'not_equal';
+    left: string;
+    right: string;
+    message?: string;
+  }>;
   readOutput?: {
     type: 'array' | 'object' | 'scalar';
     source: string;
@@ -1553,6 +1597,39 @@ export async function listMetaOperations(options: {
     .map(([operationId, operationSpec]) => {
       const operation = materializeOperation(operationId, operationSpec, meta);
       const readOutput = normalizeReadOutputSpec(operation.readOutput, `${options.protocolId}/${operationId}`);
+      const operationLabel =
+        typeof operationSpec.label === 'string' && operationSpec.label.trim().length > 0
+          ? operationSpec.label.trim()
+          : undefined;
+      const crossValidation = Array.isArray(operationSpec.validate?.cross)
+        ? operationSpec.validate!.cross
+            .map((rule) =>
+              rule &&
+              typeof rule === 'object' &&
+              rule.kind === 'not_equal' &&
+              typeof rule.left === 'string' &&
+              rule.left.trim().length > 0 &&
+              typeof rule.right === 'string' &&
+              rule.right.trim().length > 0
+                ? {
+                    kind: 'not_equal' as const,
+                    left: rule.left.trim(),
+                    right: rule.right.trim(),
+                    ...(typeof rule.message === 'string' && rule.message.trim().length > 0
+                      ? { message: rule.message.trim() }
+                      : {}),
+                  }
+                : null,
+            )
+            .filter(
+              (rule): rule is {
+                kind: 'not_equal';
+                left: string;
+                right: string;
+                message?: string;
+              } => rule !== null,
+            )
+        : [];
       const inputs = Object.fromEntries(
         Object.entries(operation.inputs).map(([name, spec]) => [
           name,
@@ -1564,14 +1641,48 @@ export async function listMetaOperations(options: {
             ...(spec.discover_from ? { discover_stage: resolveDiscoverStage(spec.discover_from, operation) } : {}),
             ...(spec.ui_tier ? { ui_tier: spec.ui_tier } : {}),
             ...(typeof spec.ui_editable === 'boolean' ? { ui_editable: spec.ui_editable } : {}),
+            ...(typeof spec.label === 'string' && spec.label.trim().length > 0 ? { label: spec.label.trim() } : {}),
+            ...(typeof spec.placeholder === 'string' && spec.placeholder.trim().length > 0
+              ? { placeholder: spec.placeholder.trim() }
+              : {}),
+            ...(typeof spec.help === 'string' && spec.help.trim().length > 0 ? { help: spec.help.trim() } : {}),
+            ...(typeof spec.group === 'string' && spec.group.trim().length > 0 ? { group: spec.group.trim() } : {}),
+            ...(typeof spec.display_order === 'number' && Number.isFinite(spec.display_order)
+              ? { display_order: spec.display_order }
+              : {}),
+            ...(spec.example !== undefined ? { example: cloneJsonLike(spec.example) } : {}),
+            ...(spec.ui_example !== undefined ? { ui_example: cloneJsonLike(spec.ui_example) } : {}),
+            ...(spec.validate && typeof spec.validate === 'object'
+              ? {
+                  validate: {
+                    ...(typeof spec.validate.required === 'boolean'
+                      ? { required: spec.validate.required }
+                      : {}),
+                    ...(typeof spec.validate.min === 'string' || typeof spec.validate.min === 'number'
+                      ? { min: spec.validate.min }
+                      : {}),
+                    ...(typeof spec.validate.max === 'string' || typeof spec.validate.max === 'number'
+                      ? { max: spec.validate.max }
+                      : {}),
+                    ...(typeof spec.validate.pattern === 'string' && spec.validate.pattern.trim().length > 0
+                      ? { pattern: spec.validate.pattern.trim() }
+                      : {}),
+                    ...(typeof spec.validate.message === 'string' && spec.validate.message.trim().length > 0
+                      ? { message: spec.validate.message.trim() }
+                      : {}),
+                  },
+                }
+              : {}),
           },
         ]),
       );
 
       return {
         operationId,
+        ...(operationLabel ? { label: operationLabel } : {}),
         instruction: operation.instruction,
         inputs,
+        ...(crossValidation.length > 0 ? { crossValidation } : {}),
         ...(readOutput ? { readOutput } : {}),
       } as MetaOperationSummary;
     })
