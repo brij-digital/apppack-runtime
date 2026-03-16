@@ -13,6 +13,7 @@ const META_IDL_SCHEMA = 'meta-idl.v0.6';
 const META_IDL_CORE_SCHEMA = 'meta-idl.core.v0.6';
 const META_APP_SCHEMA = 'meta-app.v0.1';
 const DEFAULT_SPL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 
 type BuiltinResolverName =
   | 'wallet_pubkey'
@@ -114,6 +115,7 @@ type ActionSpec = {
   remaining_accounts?: Array<Record<string, unknown>>;
   view?: ViewSpec;
   read_output?: ReadOutputSpec;
+  pre?: PreInstructionSpec[];
   post?: PostInstructionSpec[];
   use?: TemplateUseSpec[];
   validate?: {
@@ -210,6 +212,7 @@ type MaterializedActionSpec = {
   remainingAccounts: unknown;
   view?: ViewSpec;
   readOutput?: ReadOutputSpec;
+  pre?: PreInstructionSpec[];
   post?: PostInstructionSpec[];
 };
 
@@ -245,6 +248,31 @@ type PostInstructionSpec = {
   token_program?: unknown;
   when?: MetaCondition;
 };
+
+type PreInstructionSpec =
+  | {
+      kind: 'spl_ata_create_idempotent';
+      payer: unknown;
+      ata: unknown;
+      owner: unknown;
+      mint: unknown;
+      token_program?: unknown;
+      associated_token_program?: unknown;
+      when?: MetaCondition;
+    }
+  | {
+      kind: 'system_transfer';
+      from: unknown;
+      to: unknown;
+      lamports: unknown;
+      when?: MetaCondition;
+    }
+  | {
+      kind: 'spl_token_sync_native';
+      account: unknown;
+      token_program?: unknown;
+      when?: MetaCondition;
+    };
 
 type LookupSourceSpec =
   | { kind: 'inline'; items: unknown[] }
@@ -306,6 +334,7 @@ type PreparedMetaInstruction = {
   accounts: Record<string, string>;
   remainingAccounts: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   derived: Record<string, unknown>;
+  preInstructions: PreparedPreInstruction[];
   postInstructions: PreparedPostInstruction[];
 };
 
@@ -325,8 +354,31 @@ type PreparedMetaOperation = {
     maxItems?: number;
     itemLabelFields?: string[];
   };
+  preInstructions: PreparedPreInstruction[];
   postInstructions: PreparedPostInstruction[];
 };
+
+type PreparedPreInstruction =
+  | {
+      kind: 'spl_ata_create_idempotent';
+      payer: string;
+      ata: string;
+      owner: string;
+      mint: string;
+      tokenProgram: string;
+      associatedTokenProgram: string;
+    }
+  | {
+      kind: 'system_transfer';
+      from: string;
+      to: string;
+      lamports: string;
+    }
+  | {
+      kind: 'spl_token_sync_native';
+      account: string;
+      tokenProgram: string;
+    };
 
 type PreparedPostInstruction = {
   kind: 'spl_token_close_account';
@@ -352,6 +404,7 @@ export type MetaOperationExplain = {
   remainingAccounts: unknown;
   view?: Record<string, unknown>;
   readOutput?: Record<string, unknown>;
+  pre: Array<Record<string, unknown>>;
   post: Array<Record<string, unknown>>;
 };
 
@@ -641,6 +694,28 @@ function asString(value: unknown, label: string): string {
   }
 
   throw new Error(`${label} must be a string.`);
+}
+
+function asU64String(value: unknown, label: string): string {
+  if (typeof value === 'string') {
+    if (!/^\d+$/.test(value)) {
+      throw new Error(`${label} must be an unsigned integer string.`);
+    }
+    return value;
+  }
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || value < 0 || !Number.isInteger(value)) {
+      throw new Error(`${label} must be a non-negative integer.`);
+    }
+    return String(value);
+  }
+  if (typeof value === 'bigint') {
+    if (value < 0n) {
+      throw new Error(`${label} must be non-negative.`);
+    }
+    return value.toString();
+  }
+  throw new Error(`${label} must resolve to u64-compatible value.`);
 }
 
 function asPubkey(value: unknown, label: string): PublicKey {
@@ -972,6 +1047,10 @@ function mergeActionFragment(target: MaterializedActionSpec, fragment: Omit<Acti
     target.readOutput = cloneJsonLike(fragment.read_output);
   }
 
+  if (fragment.pre && fragment.pre.length > 0) {
+    target.pre = [...(target.pre ?? []), ...cloneJsonLike(fragment.pre)];
+  }
+
   if (fragment.post && fragment.post.length > 0) {
     target.post = [...(target.post ?? []), ...cloneJsonLike(fragment.post)];
   }
@@ -987,6 +1066,7 @@ function materializeOperation(operationId: string, operation: ActionSpec, meta: 
     args: {},
     accounts: {},
     remainingAccounts: [],
+    pre: [],
     post: [],
   };
 
@@ -1019,6 +1099,7 @@ function materializeOperation(operationId: string, operation: ActionSpec, meta: 
     remaining_accounts: operation.remaining_accounts,
     view: operation.view,
     read_output: operation.read_output,
+    pre: operation.pre,
     post: operation.post,
   });
   mergeActionFragment(materialized, actionDirectFragment, `operation ${operationId}`);
@@ -1078,6 +1159,67 @@ function resolvePostInstructions(
         owner,
         tokenProgram,
       };
+    });
+}
+
+function resolvePreInstructions(
+  pre: PreInstructionSpec[] | undefined,
+  scope: Record<string, unknown>,
+): PreparedPreInstruction[] {
+  if (!pre || pre.length === 0) {
+    return [];
+  }
+
+  return pre
+    .filter((spec) => (spec.when ? evaluateCondition(spec.when, scope) : true))
+    .map((spec) => {
+      if (spec.kind === 'spl_ata_create_idempotent') {
+        const payer = asString(resolveTemplateValue(spec.payer, scope), 'pre.payer');
+        const ata = asString(resolveTemplateValue(spec.ata, scope), 'pre.ata');
+        const owner = asString(resolveTemplateValue(spec.owner, scope), 'pre.owner');
+        const mint = asString(resolveTemplateValue(spec.mint, scope), 'pre.mint');
+        const tokenProgram = spec.token_program
+          ? asString(resolveTemplateValue(spec.token_program, scope), 'pre.token_program')
+          : DEFAULT_SPL_TOKEN_PROGRAM;
+        const associatedTokenProgram = spec.associated_token_program
+          ? asString(resolveTemplateValue(spec.associated_token_program, scope), 'pre.associated_token_program')
+          : DEFAULT_ASSOCIATED_TOKEN_PROGRAM;
+        return {
+          kind: 'spl_ata_create_idempotent',
+          payer,
+          ata,
+          owner,
+          mint,
+          tokenProgram,
+          associatedTokenProgram,
+        };
+      }
+
+      if (spec.kind === 'system_transfer') {
+        const from = asString(resolveTemplateValue(spec.from, scope), 'pre.from');
+        const to = asString(resolveTemplateValue(spec.to, scope), 'pre.to');
+        const lamports = asU64String(resolveTemplateValue(spec.lamports, scope), 'pre.lamports');
+        return {
+          kind: 'system_transfer',
+          from,
+          to,
+          lamports,
+        };
+      }
+
+      if (spec.kind === 'spl_token_sync_native') {
+        const account = asString(resolveTemplateValue(spec.account, scope), 'pre.account');
+        const tokenProgram = spec.token_program
+          ? asString(resolveTemplateValue(spec.token_program, scope), 'pre.token_program')
+          : DEFAULT_SPL_TOKEN_PROGRAM;
+        return {
+          kind: 'spl_token_sync_native',
+          account,
+          tokenProgram,
+        };
+      }
+
+      throw new Error(`Unsupported pre instruction kind: ${(spec as { kind?: unknown }).kind}`);
     });
 }
 
@@ -1500,6 +1642,7 @@ async function prepareMetaOperationInternal(options: {
   const resolvedRemainingAccounts = normalizeRuntimeValue(
     resolveTemplateValue(operation.remainingAccounts ?? [], scope),
   );
+  const preInstructions = resolvePreInstructions(operation.pre, scope);
   const postInstructions = resolvePostInstructions(operation.post, scope);
 
   return {
@@ -1514,6 +1657,7 @@ async function prepareMetaOperationInternal(options: {
       operation.readOutput,
       `${options.protocolId}/${options.operationId}`,
     ),
+    preInstructions,
     postInstructions,
   };
 }
@@ -1550,6 +1694,7 @@ export async function prepareMetaInstruction(options: {
     accounts: prepared.accounts,
     remainingAccounts: prepared.remainingAccounts,
     derived: prepared.derived,
+    preInstructions: prepared.preInstructions,
     postInstructions: prepared.postInstructions,
   };
 }
@@ -1579,6 +1724,7 @@ export async function explainMetaOperation(options: {
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),
     ...(materialized.view ? { view: cloneJsonLike(materialized.view) } : {}),
     ...(readOutput ? { readOutput } : {}),
+    pre: cloneJsonLike(materialized.pre ?? []),
     post: cloneJsonLike(materialized.post ?? []),
   };
 }
