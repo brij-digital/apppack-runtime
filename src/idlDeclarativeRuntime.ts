@@ -506,8 +506,14 @@ function sampleValueForType(idl: Idl, type: IdlTypeRef | unknown): unknown {
       }
 
       if (typeDef.type.kind === 'enum') {
-        const firstVariant = typeDef.type.variants?.[0]?.name ?? 'Variant';
-        return { variant: firstVariant };
+        const variantNames = (typeDef.type.variants ?? []).map((variant) => variant.name).filter(Boolean);
+        if (variantNames.length === 0) {
+          throw new Error(`Cannot build sample for enum ${definedName}: enum has no variants.`);
+        }
+        return {
+          variant: '__REQUIRED_ENUM_VARIANT__',
+          allowed_variants: variantNames,
+        };
       }
     }
   }

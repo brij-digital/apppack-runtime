@@ -633,7 +633,10 @@ async function runDiscoverPickListItem(step: DiscoverStepResolved): Promise<unkn
     throw new Error(`discover:${step.name}: no candidates found.`);
   }
 
-  const indexRaw = step.index === undefined ? 0 : asSafeInteger(step.index, `discover:${step.name}:index`);
+  if (step.index === undefined) {
+    throw new Error(`discover:${step.name}: index is required (no implicit default).`);
+  }
+  const indexRaw = asSafeInteger(step.index, `discover:${step.name}:index`);
   if (indexRaw < 0 || indexRaw >= items.length) {
     throw new Error(`discover:${step.name}:index ${indexRaw} is out of bounds for ${items.length} item(s).`);
   }
@@ -670,10 +673,8 @@ async function runDiscoverPickListItemByValue(step: DiscoverStepResolved, ctx: D
   }
 
   const valuePath = asString(step.value_path, `discover:${step.name}:value_path`);
-  const fallbackIndex =
-    step.fallback_index === undefined ? 0 : asSafeInteger(step.fallback_index, `discover:${step.name}:fallback_index`);
-  if (fallbackIndex < 0 || fallbackIndex >= items.length) {
-    throw new Error(`discover:${step.name}:fallback_index ${fallbackIndex} is out of bounds for ${items.length} item(s).`);
+  if (step.fallback_index !== undefined) {
+    throw new Error(`discover:${step.name}: fallback_index is not supported (no silent fallback).`);
   }
 
   const resolvedMatchValue = resolveOptionalMatchValue(step, ctx);
@@ -683,7 +684,7 @@ async function runDiscoverPickListItemByValue(step: DiscoverStepResolved, ctx: D
     resolvedMatchValue !== null &&
     String(resolvedMatchValue).length > 0;
   if (!hasMatchValue) {
-    return items[fallbackIndex];
+    throw new Error(`discover:${step.name}: match_value is required and must be non-empty.`);
   }
 
   for (const item of items) {
@@ -693,7 +694,9 @@ async function runDiscoverPickListItemByValue(step: DiscoverStepResolved, ctx: D
     }
   }
 
-  return items[fallbackIndex];
+  throw new Error(
+    `discover:${step.name}: no item matched value_path=${valuePath} for match_value=${String(resolvedMatchValue)}.`,
+  );
 }
 
 async function runDiscoverQuery(step: DiscoverStepResolved, ctx: DiscoverRuntimeContext): Promise<unknown> {

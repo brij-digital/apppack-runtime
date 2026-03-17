@@ -68,7 +68,6 @@ type ActionInputSpec = {
   type: string;
   required?: boolean;
   default?: unknown;
-  discover_from?: string;
   read_from?: string;
   ui_editable?: boolean;
   label?: string;
@@ -419,8 +418,6 @@ export type MetaOperationSummary = {
       type: string;
       required: boolean;
       default?: unknown;
-      discover_from?: string;
-      discover_stage?: 'discover' | 'derive' | 'compute' | 'input' | 'unknown';
       read_from?: string;
       read_stage?: 'discover' | 'derive' | 'compute' | 'input' | 'unknown';
       ui_editable?: boolean;
@@ -1554,7 +1551,6 @@ async function prepareMetaOperationInternal(options: {
   const operation = materializeOperation(options.operationId, operationSpec, meta);
 
   const hydratedInput: Record<string, unknown> = {};
-  const discoverableInputs: Array<{ key: string; spec: ActionInputSpec }> = [];
   for (const [key, spec] of Object.entries(operation.inputs ?? {})) {
     if (options.input[key] !== undefined) {
       hydratedInput[key] = options.input[key];
@@ -1563,11 +1559,6 @@ async function prepareMetaOperationInternal(options: {
 
     if (spec.default !== undefined) {
       hydratedInput[key] = spec.default;
-      continue;
-    }
-
-    if (spec.discover_from !== undefined) {
-      discoverableInputs.push({ key, spec });
       continue;
     }
 
@@ -1635,23 +1626,6 @@ async function prepareMetaOperationInternal(options: {
     derived[step.name] = value;
     scope[step.name] = value;
     scope.derived = derived;
-  }
-
-  for (const { key, spec } of discoverableInputs) {
-    if (hydratedInput[key] !== undefined) {
-      continue;
-    }
-
-    try {
-      hydratedInput[key] = normalizeRuntimeValue(resolvePath(scope, spec.discover_from!));
-      scope.input = hydratedInput;
-      scope[key] = hydratedInput[key];
-    } catch (error) {
-      if (spec.required !== false) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new Error(`Missing required meta input: ${key} (discover_from ${spec.discover_from} failed: ${reason})`);
-      }
-    }
   }
 
   const resolvedArgs = normalizeRuntimeValue(resolveTemplateValue(operation.args ?? {}, scope));
@@ -1801,8 +1775,6 @@ export async function listMetaOperations(options: {
             type: spec.type,
             required: spec.required !== false,
             ...(spec.default !== undefined ? { default: cloneJsonLike(spec.default) } : {}),
-            ...(spec.discover_from ? { discover_from: spec.discover_from } : {}),
-            ...(spec.discover_from ? { discover_stage: resolveDiscoverStage(spec.discover_from, operation) } : {}),
             ...(spec.read_from ? { read_from: spec.read_from } : {}),
             ...(spec.read_from ? { read_stage: resolveDiscoverStage(spec.read_from, operation) } : {}),
             ...(typeof spec.ui_editable === 'boolean' ? { ui_editable: spec.ui_editable } : {}),
