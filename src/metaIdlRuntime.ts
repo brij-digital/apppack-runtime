@@ -152,15 +152,6 @@ type UserAppStatusTextSpec = {
   error: string;
 };
 
-type UserAppStepSuccessSpec =
-  | {
-      kind: 'operation_ok';
-    }
-  | {
-      kind: 'value_present';
-      path: string;
-    };
-
 type UserAppStepSpec = {
   id: string;
   label?: string;
@@ -172,7 +163,6 @@ type UserAppStepSpec = {
   input_from?: Record<string, unknown>;
   transitions: UserAppStepTransitionSpec[];
   blocking: UserAppStepBlockingSpec;
-  success: UserAppStepSuccessSpec;
   actions: UserAppActionSpec[];
   ui?: {
     kind: 'select_from_derived';
@@ -477,14 +467,6 @@ export type MetaAppStepSummary = {
     dependsOn: string[];
     requiresPaths: string[];
   };
-  success:
-    | {
-        kind: 'operation_ok';
-      }
-    | {
-        kind: 'value_present';
-        path: string;
-      };
   ui?: {
     kind: 'select_from_derived';
     source: string;
@@ -2023,25 +2005,6 @@ export async function listMetaApps(options: {
             )
           : [];
 
-        const successRaw = asRecord(step.success, `${options.protocolId}.apps.${appId}.steps[${index}].success`);
-        const successKind = asString(successRaw.kind, `${options.protocolId}.apps.${appId}.steps[${index}].success.kind`);
-        const success: MetaAppStepSummary['success'] =
-          successKind === 'operation_ok'
-            ? { kind: 'operation_ok' }
-            : successKind === 'value_present'
-              ? {
-                  kind: 'value_present',
-                  path: asString(
-                    successRaw.path,
-                    `${options.protocolId}.apps.${appId}.steps[${index}].success.path`,
-                  ),
-                }
-                : (() => {
-                    throw new Error(
-                      `${options.protocolId}.apps.${appId}.steps[${index}].success.kind must be operation_ok|value_present.`,
-                    );
-                  })();
-
         const ui =
           step.ui && typeof step.ui === 'object' && !Array.isArray(step.ui)
             ? (() => {
@@ -2098,7 +2061,6 @@ export async function listMetaApps(options: {
             dependsOn,
             requiresPaths,
           },
-          success,
           ...(ui ? { ui } : {}),
         } as MetaAppStepSummary;
       });
