@@ -1059,10 +1059,10 @@ function materializeOperation(operationId: string, operation: ActionSpec, meta: 
   mergeActionFragment(materialized, actionDirectFragment, `operation ${operationId}`);
 
   for (const [inputName, inputSpec] of Object.entries(materialized.inputs ?? {})) {
-    if (inputSpec.ui_editable === false) {
+    if (inputSpec.read_from !== undefined) {
       if (typeof inputSpec.read_from !== 'string' || inputSpec.read_from.trim().length === 0) {
         throw new Error(
-          `Operation ${operationId} input ${inputName}: ui_editable=false requires non-empty read_from.`,
+          `Operation ${operationId} input ${inputName}: read_from must be a non-empty string when provided.`,
         );
       }
     }
