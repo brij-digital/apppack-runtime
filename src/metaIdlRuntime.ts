@@ -128,11 +128,11 @@ type ActionSpec = {
 };
 
 type UserAppActionSpec = {
-  id: string;
-  kind: 'run' | 'back' | 'reset';
   label: string;
-  mode?: 'view' | 'simulate' | 'send';
-  variant: 'primary' | 'secondary' | 'ghost';
+  do: {
+    fn: 'run' | 'back' | 'reset';
+    mode?: 'view' | 'simulate' | 'send';
+  };
 };
 
 type UserAppStatusTextSpec = {
@@ -441,11 +441,11 @@ export type MetaAppStepSummary = {
     error: string;
   };
   actions: Array<{
-    actionId: string;
-    kind: 'run' | 'back' | 'reset';
     label: string;
-    mode?: 'view' | 'simulate' | 'send';
-    variant: 'primary' | 'secondary' | 'ghost';
+    do: {
+      fn: 'run' | 'back' | 'reset';
+      mode?: 'view' | 'simulate' | 'send';
+    };
   }>;
   inputFrom: Record<string, unknown>;
   requiresPaths: string[];
@@ -1871,56 +1871,49 @@ export async function listMetaApps(options: {
             actionRaw,
             `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}]`,
           );
-          const kind = asString(
-            action.kind,
-            `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].kind`,
+          const label = asString(
+            action.label,
+            `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].label`,
           );
-          if (kind !== 'run' && kind !== 'back' && kind !== 'reset') {
+          const doRaw = asRecord(
+            action.do,
+            `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do`,
+          );
+          const fn = asString(
+            doRaw.fn,
+            `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do.fn`,
+          );
+          if (fn !== 'run' && fn !== 'back' && fn !== 'reset') {
             throw new Error(
-              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].kind must be run|back|reset.`,
-            );
-          }
-          const variant = asString(
-            action.variant,
-            `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].variant`,
-          ).trim();
-          if (variant !== 'primary' && variant !== 'secondary' && variant !== 'ghost') {
-            throw new Error(
-              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].variant must be primary|secondary|ghost.`,
+              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do.fn must be run|back|reset.`,
             );
           }
           const mode =
-            typeof action.mode === 'string' && action.mode.trim().length > 0
-              ? action.mode.trim()
+            typeof doRaw.mode === 'string' && doRaw.mode.trim().length > 0
+              ? doRaw.mode.trim()
               : undefined;
-          if (kind === 'run') {
+          if (fn === 'run') {
             if (!mode) {
               throw new Error(
-                `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].mode is required for run actions.`,
+                `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do.mode is required for run actions.`,
               );
             }
             if (mode !== 'view' && mode !== 'simulate' && mode !== 'send') {
               throw new Error(
-                `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].mode must be view|simulate|send.`,
+                `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do.mode must be view|simulate|send.`,
               );
             }
           } else if (mode) {
             throw new Error(
-              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].mode is only allowed for run actions.`,
+              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].do.mode is only allowed for run actions.`,
             );
           }
           return {
-            actionId: asString(
-              action.id,
-              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].id`,
-            ),
-            kind,
-            label: asString(
-              action.label,
-              `${options.protocolId}.apps.${appId}.steps[${index}].actions[${actionIndex}].label`,
-            ),
-            ...(mode ? { mode } : {}),
-            variant,
+            label,
+            do: {
+              fn,
+              ...(mode ? { mode } : {}),
+            },
           };
         });
 
