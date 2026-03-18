@@ -133,7 +133,6 @@ type UserAppStepTransitionSpec = {
 };
 
 type UserAppStepBlockingSpec = {
-  depends_on: string[];
   requires_paths?: string[];
 };
 
@@ -162,7 +161,7 @@ type UserAppStepSpec = {
   status_text: UserAppStatusTextSpec;
   input_from?: Record<string, unknown>;
   transitions: UserAppStepTransitionSpec[];
-  blocking: UserAppStepBlockingSpec;
+  blocking?: UserAppStepBlockingSpec;
   actions: UserAppActionSpec[];
   ui?: {
     kind: 'select_from_derived';
@@ -464,7 +463,6 @@ export type MetaAppStepSummary = {
     to: string;
   }>;
   blocking: {
-    dependsOn: string[];
     requiresPaths: string[];
   };
   ui?: {
@@ -1987,15 +1985,10 @@ export async function listMetaApps(options: {
           }
         }
 
-        const blockingRaw = asRecord(step.blocking, `${options.protocolId}.apps.${appId}.steps[${index}].blocking`);
-        if (!Array.isArray(blockingRaw.depends_on)) {
-          throw new Error(
-            `${options.protocolId}.apps.${appId}.steps[${index}].blocking.depends_on must be an array.`,
-          );
-        }
-        const dependsOn = blockingRaw.depends_on.map((entry, depIndex) =>
-          asString(entry, `${options.protocolId}.apps.${appId}.steps[${index}].blocking.depends_on[${depIndex}]`),
-        );
+        const blockingRaw =
+          step.blocking && typeof step.blocking === 'object' && !Array.isArray(step.blocking)
+            ? asRecord(step.blocking, `${options.protocolId}.apps.${appId}.steps[${index}].blocking`)
+            : {};
         const requiresPaths = Array.isArray(blockingRaw.requires_paths)
           ? blockingRaw.requires_paths.map((entry, pathIndex) =>
               asString(
@@ -2058,7 +2051,6 @@ export async function listMetaApps(options: {
           inputFrom,
           transitions,
           blocking: {
-            dependsOn,
             requiresPaths,
           },
           ...(ui ? { ui } : {}),
@@ -2077,13 +2069,6 @@ export async function listMetaApps(options: {
       }
 
       for (const step of steps) {
-        for (const dep of step.blocking.dependsOn) {
-          if (!stepIdSet.has(dep)) {
-            throw new Error(
-              `${options.protocolId}.apps.${appId}.steps.${step.stepId}.blocking.depends_on references unknown step ${dep}.`,
-            );
-          }
-        }
         if (step.nextOnSuccess && !stepIdSet.has(step.nextOnSuccess)) {
           throw new Error(
             `${options.protocolId}.apps.${appId}.steps.${step.stepId}.next_on_success references unknown step ${step.nextOnSuccess}.`,
