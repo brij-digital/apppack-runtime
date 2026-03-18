@@ -74,6 +74,12 @@ function asBigInt(value: unknown, label: string): bigint {
   if (typeof value === 'string' && /^-?\d+$/.test(value)) {
     return BigInt(value);
   }
+  if (typeof value === 'string' && /^0x[0-9a-fA-F]+$/.test(value)) {
+    return BigInt(value);
+  }
+  if (typeof value === 'string' && /^[0-9a-fA-F]+$/.test(value) && /[a-fA-F]/.test(value)) {
+    return BigInt(`0x${value}`);
+  }
   throw new Error(`${label} must be bigint-compatible integer.`);
 }
 
