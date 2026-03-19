@@ -353,3 +353,65 @@ test('runRead supports view v0.2 search shape with indexed_filters and decoded f
 
   await service.close();
 });
+
+test('syncFullToDatabase bootstraps cached_program_accounts for view v0.2 search', async () => {
+  const idlPath = await writeTempJson('idl-bootstrap', IDL);
+  const metaPath = await writeTempJson('meta-bootstrap', META_V2);
+  const coder = new BorshAccountsCoder(IDL);
+  const data = await coder.encode('Whirlpool', {
+    token_mint_a: new PublicKey(MINT_USDC),
+    token_mint_b: new PublicKey(MINT_SOL),
+    tick_spacing: 16,
+    liquidity: new BN('123456'),
+  });
+
+  const queries = [];
+  const pool = {
+    async query(sql, params) {
+      queries.push({ sql: String(sql), params: params ?? [] });
+      return { rows: [{ pubkey: 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE' }], rowCount: 1 };
+    },
+    async end() {},
+  };
+
+  const connection = {
+    async getProgramAccounts() {
+      return [
+        {
+          pubkey: new PublicKey('Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE'),
+          account: {
+            data: Buffer.from(data),
+            executable: false,
+            lamports: 5000,
+            owner: new PublicKey(PROGRAM_ID),
+            rentEpoch: BigInt(0),
+          },
+        },
+      ];
+    },
+    async getSlot() {
+      return 202532154;
+    },
+  };
+
+  const service = new AppPackViewReadService({
+    connection,
+    databaseUrl: null,
+    poolOverride: pool,
+    cacheTtlMs: 1000,
+    metaPath,
+    idlPath,
+    programId: PROGRAM_ID,
+    operationId: 'list_pools',
+  });
+
+  const result = await service.syncFullToDatabase();
+  assert.equal(result?.totalAccounts, 1);
+  assert.equal(result?.upserted, 1);
+  assert.equal(result?.slot, 202532154);
+
+  const insertQuery = queries.find((entry) => entry.sql.includes('INSERT INTO cached_program_accounts'));
+  assert.ok(insertQuery, 'expected bootstrap insert into cached_program_accounts');
+
+  await service.close();
+});

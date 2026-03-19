@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
@@ -747,6 +748,42 @@ export class AppPackViewReadService {
       WHERE namespace = '${this.compiled.namespace}';
     `);
 
+    await this.pool.query(`
+      CREATE TABLE IF NOT EXISTS ${ACCOUNT_CACHE_TABLE} (
+        pubkey TEXT PRIMARY KEY,
+        owner_program_id TEXT NOT NULL,
+        slot BIGINT NOT NULL,
+        lamports BIGINT NOT NULL,
+        rent_epoch TEXT NOT NULL,
+        executable BOOLEAN NOT NULL,
+        data_bytes BYTEA NOT NULL,
+        data_hash BYTEA NOT NULL,
+        data_len INTEGER NOT NULL,
+        source TEXT NOT NULL,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `);
+
+    await this.pool.query(`
+      ALTER TABLE ${ACCOUNT_CACHE_TABLE}
+      ALTER COLUMN rent_epoch TYPE TEXT USING rent_epoch::TEXT;
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_cached_program_accounts_owner_slot_pubkey
+      ON ${ACCOUNT_CACHE_TABLE} (owner_program_id, slot DESC, pubkey);
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_cached_program_accounts_owner_len
+      ON ${ACCOUNT_CACHE_TABLE} (owner_program_id, data_len);
+    `);
+
+    await this.pool.query(`
+      CREATE INDEX IF NOT EXISTS idx_cached_program_accounts_owner_disc8
+      ON ${ACCOUNT_CACHE_TABLE} (owner_program_id, substring(data_bytes from 1 for 8));
+    `);
+
     await this.migrateLegacyOrcaTablesIfNeeded();
   }
 
@@ -806,23 +843,42 @@ export class AppPackViewReadService {
       return null;
     }
 
+    const filters: GetProgramAccountsFilter[] = [{ dataSize: this.compiled.accountSize }];
+    if (this.compiled.discriminatorFilter && 'memcmp' in this.compiled.discriminatorFilter) {
+      filters.push(this.compiled.discriminatorFilter);
+    }
+    for (const clause of this.compiled.staticMemcmpFilters) {
+      const cmp = clause?.memcmp;
+      if (!cmp) {
+        continue;
+      }
+      filters.push({
+        memcmp: {
+          offset: cmp.offset,
+          bytes: this.resolveMemcmpBytes(clause, {}).toString('base64'),
+          encoding: 'base64',
+        },
+      });
+    }
+
     const accounts = await this.connection.getProgramAccounts(this.compiled.programId, {
       commitment: 'confirmed',
-      filters: [{ dataSize: this.compiled.accountSize }],
+      filters,
     });
     const slot = await this.connection.getSlot('confirmed');
 
-    const records: Array<{ entityId: string; payload: Record<string, unknown> }> = [];
-    for (const account of accounts) {
-      const selected = this.decodeAndSelect(account.pubkey.toBase58(), account.account.data, {});
-      if (!selected) {
-        continue;
-      }
-      const entityId = this.buildEntityId(selected, account.pubkey.toBase58());
-      records.push({ entityId, payload: selected });
-    }
-
-    const upserted = await this.upsertRecords(records, slot);
+    const upserted = await this.upsertAccountCacheRecords(
+      accounts.map((account) => ({
+        pubkey: account.pubkey.toBase58(),
+        ownerProgramId: this.compiled.programId.toBase58(),
+        slot,
+        lamports: account.account.lamports,
+        rentEpoch: account.account.rentEpoch ?? 0,
+        executable: account.account.executable,
+        data: Buffer.from(account.account.data),
+        source: `bootstrap:${this.compiled.namespace}`,
+      })),
+    );
     this.clearCache();
     return {
       totalAccounts: accounts.length,
@@ -864,8 +920,17 @@ export class AppPackViewReadService {
       };
     }
 
-    const records: Array<{ entityId: string; payload: Record<string, unknown> }> = [];
     let fetchedAccounts = 0;
+    const cacheRecords: Array<{
+      pubkey: string;
+      ownerProgramId: string;
+      slot: number;
+      lamports: bigint | number;
+      rentEpoch: bigint | number;
+      executable: boolean;
+      data: Buffer;
+      source: string;
+    }> = [];
 
     for (const group of chunk(list, 100)) {
       const pubkeys = group.map((value) => new PublicKey(value));
@@ -886,16 +951,20 @@ export class AppPackViewReadService {
         if (!pubkey) {
           continue;
         }
-        const selected = this.decodeAndSelect(pubkey, info.data, {});
-        if (!selected) {
-          continue;
-        }
-        const entityId = this.buildEntityId(selected, pubkey);
-        records.push({ entityId, payload: selected });
+        cacheRecords.push({
+          pubkey,
+          ownerProgramId: info.owner.toBase58(),
+          slot,
+          lamports: info.lamports,
+          rentEpoch: info.rentEpoch ?? 0,
+          executable: info.executable,
+          data: Buffer.from(info.data),
+          source: `refresh:${this.compiled.namespace}`,
+        });
       }
     }
 
-    const upserted = await this.upsertRecords(records, slot);
+    const upserted = await this.upsertAccountCacheRecords(cacheRecords);
     if (upserted > 0) {
       this.clearCache();
     }
@@ -903,7 +972,7 @@ export class AppPackViewReadService {
     return {
       inputAccounts: list.length,
       fetchedAccounts,
-      decodedAccounts: records.length,
+      decodedAccounts: cacheRecords.length,
       upserted,
       slot,
     };
@@ -1452,6 +1521,64 @@ export class AppPackViewReadService {
     } finally {
       client.release();
     }
+  }
+
+  private async upsertAccountCacheRecords(
+    records: Array<{
+      pubkey: string;
+      ownerProgramId: string;
+      slot: number;
+      lamports: bigint | number;
+      rentEpoch: bigint | number;
+      executable: boolean;
+      data: Buffer;
+      source: string;
+    }>,
+  ): Promise<number> {
+    if (!this.pool || records.length === 0) {
+      return 0;
+    }
+
+    let upserted = 0;
+    for (const record of records) {
+      const hash = createHash('sha256').update(record.data).digest();
+      const result = await this.pool.query(
+        `
+          INSERT INTO ${ACCOUNT_CACHE_TABLE}
+            (pubkey, owner_program_id, slot, lamports, rent_epoch, executable, data_bytes, data_hash, data_len, source, updated_at)
+          VALUES
+            ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())
+          ON CONFLICT (pubkey) DO UPDATE
+            SET owner_program_id = EXCLUDED.owner_program_id,
+                slot = EXCLUDED.slot,
+                lamports = EXCLUDED.lamports,
+                rent_epoch = EXCLUDED.rent_epoch,
+                executable = EXCLUDED.executable,
+                data_bytes = EXCLUDED.data_bytes,
+                data_hash = EXCLUDED.data_hash,
+                data_len = EXCLUDED.data_len,
+                source = EXCLUDED.source,
+                updated_at = NOW()
+          WHERE ${ACCOUNT_CACHE_TABLE}.slot < EXCLUDED.slot
+             OR ${ACCOUNT_CACHE_TABLE}.data_hash IS DISTINCT FROM EXCLUDED.data_hash
+          RETURNING pubkey
+        `,
+        [
+          record.pubkey,
+          record.ownerProgramId,
+          record.slot,
+          String(record.lamports),
+          String(record.rentEpoch),
+          record.executable,
+          record.data,
+          hash,
+          record.data.length,
+          record.source,
+        ],
+      );
+      upserted += result.rowCount ?? 0;
+    }
+    return upserted;
   }
 
   private async tableExists(tableName: string): Promise<boolean> {
