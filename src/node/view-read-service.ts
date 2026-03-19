@@ -1555,7 +1555,7 @@ export class AppPackViewReadService {
                 source = EXCLUDED.source,
                 updated_at = NOW()
           WHERE ${ACCOUNT_CACHE_TABLE}.slot < EXCLUDED.slot
-             OR ${ACCOUNT_CACHE_TABLE}.data_hash IS DISTINCT FROM EXCLUDED.data_hash
+             OR ${ACCOUNT_CACHE_TABLE}.data_hash <> EXCLUDED.data_hash
           RETURNING pubkey
         `,
         [
