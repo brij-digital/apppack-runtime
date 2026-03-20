@@ -19,6 +19,9 @@ For indexed search views, the node runtime expects the backing cache to provide:
 - temporal metadata such as `first_seen_slot` / `last_seen_slot`
 - deterministic shortlist queries before decode/filter/select
 
+Bootstrap-window concerns such as `bootstrap.lookback_seconds` are handled by the view-service sync worker, not by the runtime itself.
+The runtime simply consumes whatever account universe has already been cached locally.
+
 The current runtime path reads directly from cached accounts.
 It no longer depends on a separate `view_entities` table or legacy materialized-entity flow.
 
