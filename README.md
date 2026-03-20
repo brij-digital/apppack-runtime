@@ -25,6 +25,13 @@ The runtime simply consumes whatever account universe has already been cached lo
 The current runtime path reads directly from cached accounts.
 It no longer depends on a separate `view_entities` table or legacy materialized-entity flow.
 
+The intended split is:
+- `search` views: cache/index-first, because they need discovery over an account universe
+- `account` views: direct known-account reads, which may be served from cache or straight from RPC depending on the caller and deployment model
+
+In other words, `account` does not mean "stale cached forever".
+It means the view starts from a known address instead of a discovery scan.
+
 Protocol-specific behavior belongs in pack data (`idl + meta + app`), not in runtime code.
 
 ## Exports
