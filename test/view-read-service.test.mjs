@@ -103,6 +103,7 @@ const META = {
       inputs: {
         token_in_mint: { type: 'pubkey', required: true },
         token_out_mint: { type: 'pubkey', required: true },
+        min_last_seen_slot: { type: 'u64', required: false, default: '0' },
       },
       use: [
         {
@@ -133,6 +134,7 @@ const META_V2 = {
       inputs: {
         token_in_mint: { type: 'pubkey', required: true },
         token_out_mint: { type: 'pubkey', required: true },
+        min_last_seen_slot: { type: 'u64', required: false, default: '0' },
       },
       read_output: {
         type: 'array',
@@ -168,7 +170,10 @@ const META_V2 = {
             ],
           },
           filters: {
-            all: [{ field: 'decoded.liquidity', op: '>', value: '0' }],
+            all: [
+              { field: 'account.lastSeenSlot', op: '>=', value: '$input.min_last_seen_slot' },
+              { field: 'decoded.liquidity', op: '>', value: '0' },
+            ],
           },
           decode: {
             account_type: 'Whirlpool',
@@ -255,6 +260,7 @@ test('runRead queries cached_program_accounts via binary memcmp and returns sort
     input: {
       token_in_mint: MINT_USDC,
       token_out_mint: MINT_SOL,
+      min_last_seen_slot: '0',
     },
     limit: 20,
   });

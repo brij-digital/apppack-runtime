@@ -483,7 +483,10 @@ function inferPairParamsFromView(
     }
     if ('field' in node) {
       if (typeof node.value === 'string' && node.value.startsWith('$input.')) {
-        params.add(node.value.slice('$input.'.length));
+        const inputName = node.value.slice('$input.'.length);
+        if (operationInputDefs[inputName]?.type === 'pubkey') {
+          params.add(inputName);
+        }
       }
       return;
     }
