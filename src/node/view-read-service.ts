@@ -169,12 +169,6 @@ type ReadResult = {
   generatedAtMs: number;
 };
 
-type IndexedEntityRecord = {
-  entityId: string;
-  payload: Record<string, unknown>;
-  slot: number;
-};
-
 type CacheEntry = {
   expiresAtMs: number;
   value: ReadResult;
@@ -225,7 +219,6 @@ type CompiledOperation = {
   mode: 'search' | 'account';
   defaultLimit: number;
   outputMaxItems: number;
-  entityKeys: string[];
   pairParamA: string | null;
   pairParamB: string | null;
   programId: PublicKey;
@@ -242,8 +235,6 @@ type CompiledOperation = {
   targetAddress?: unknown;
 };
 
-const LEGACY_ORCA_POOLS_TABLE = 'orca_pools';
-const LEGACY_ORCA_HISTORY_TABLE = 'orca_pool_history';
 const ACCOUNT_CACHE_TABLE = 'cached_program_accounts';
 
 function sanitizeIndexName(value: string): string {
@@ -591,7 +582,6 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
       mode: 'search',
       defaultLimit: view.query.limit ?? operation.read_output?.max_items ?? 20,
       outputMaxItems: operation.read_output?.max_items ?? view.query.limit ?? 20,
-      entityKeys: [],
       pairParamA,
       pairParamB,
       programId: parsePublicKey(view.bootstrap.program_id, 'bootstrap.program_id'),
@@ -619,7 +609,6 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
       mode: 'account',
       defaultLimit: 1,
       outputMaxItems: 1,
-      entityKeys: [],
       pairParamA: null,
       pairParamB: null,
       programId: parsePublicKey(options.programId, 'programId'),
@@ -657,7 +646,6 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
   }
 
   const outputMaxItems = operation.read_output?.max_items ?? discoverStep.limit ?? 20;
-  const entityKeys = (operation.view as LegacyViewDef | undefined)?.entity_keys ?? ['whirlpool'];
   const [pairParamA, pairParamB] = inferPairParams(discoverStep, operationInputDefs);
 
   return {
@@ -666,7 +654,6 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
     mode: 'search',
     defaultLimit: discoverStep.limit ?? 20,
     outputMaxItems,
-    entityKeys,
     pairParamA,
     pairParamB,
     programId: parsePublicKey(options.programId, 'programId'),
@@ -727,29 +714,6 @@ export class AppPackViewReadService {
     if (!this.pool) {
       return;
     }
-
-    await this.pool.query(`
-      CREATE TABLE IF NOT EXISTS view_entities (
-        namespace TEXT NOT NULL,
-        entity_id TEXT NOT NULL,
-        slot BIGINT NOT NULL,
-        payload JSONB NOT NULL,
-        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-        PRIMARY KEY (namespace, entity_id)
-      );
-    `);
-
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS idx_view_entities_namespace_slot
-      ON view_entities (namespace, slot DESC);
-    `);
-
-    const namespaceIndexName = sanitizeIndexName(`idx_${this.compiled.namespace}_namespace`);
-    await this.pool.query(`
-      CREATE INDEX IF NOT EXISTS ${namespaceIndexName}
-      ON view_entities (namespace)
-      WHERE namespace = '${this.compiled.namespace}';
-    `);
 
     await this.pool.query(`
       CREATE TABLE IF NOT EXISTS ${ACCOUNT_CACHE_TABLE} (
@@ -815,8 +779,6 @@ export class AppPackViewReadService {
       CREATE INDEX IF NOT EXISTS idx_cached_program_accounts_owner_last_seen_pubkey
       ON ${ACCOUNT_CACHE_TABLE} (owner_program_id, last_seen_slot DESC, pubkey);
     `);
-
-    await this.migrateLegacyOrcaTablesIfNeeded();
   }
 
   clearCache(): void {
@@ -1015,52 +977,6 @@ export class AppPackViewReadService {
       return;
     }
     await this.pool.end();
-  }
-
-  async upsertIndexedRecords(records: IndexedEntityRecord[]): Promise<{ upserted: number; maxSlot: number }> {
-    if (!this.pool) {
-      throw new Error(`Cannot upsert indexed records for ${this.compiled.namespace}: DATABASE_URL is not configured.`);
-    }
-    if (records.length === 0) {
-      return { upserted: 0, maxSlot: 0 };
-    }
-
-    const normalized: IndexedEntityRecord[] = [];
-    let maxSlot = 0;
-    for (const record of records) {
-      if (!record || typeof record !== 'object') {
-        continue;
-      }
-      const entityId = String(record.entityId ?? '');
-      if (entityId.length === 0) {
-        continue;
-      }
-      if (!record.payload || typeof record.payload !== 'object' || Array.isArray(record.payload)) {
-        continue;
-      }
-      const slot = Number.parseInt(String(record.slot), 10);
-      if (!Number.isFinite(slot) || slot <= 0) {
-        continue;
-      }
-      if (slot > maxSlot) {
-        maxSlot = slot;
-      }
-      normalized.push({
-        entityId,
-        payload: record.payload,
-        slot,
-      });
-    }
-
-    if (normalized.length === 0) {
-      return { upserted: 0, maxSlot };
-    }
-
-    const upserted = await this.upsertRecordsWithSlot(normalized);
-    if (upserted > 0) {
-      this.clearCache();
-    }
-    return { upserted, maxSlot };
   }
 
   private makeCacheKey(input: Record<string, unknown>, limit: number): string {
@@ -1540,58 +1456,6 @@ export class AppPackViewReadService {
     return mapped;
   }
 
-  private buildEntityId(payload: Record<string, unknown>, fallbackPubkey: string): string {
-    const parts: string[] = [];
-    for (const key of this.compiled.entityKeys) {
-      const value = payload[key];
-      if (value === undefined || value === null) {
-        continue;
-      }
-      parts.push(String(value));
-    }
-    return parts.length > 0 ? parts.join('|') : fallbackPubkey;
-  }
-
-  private async upsertRecords(records: Array<{ entityId: string; payload: Record<string, unknown> }>, slot: number): Promise<number> {
-    return this.upsertRecordsWithSlot(records.map((record) => ({ ...record, slot })));
-  }
-
-  private async upsertRecordsWithSlot(records: IndexedEntityRecord[]): Promise<number> {
-    if (!this.pool || records.length === 0) {
-      return 0;
-    }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      const sql = `
-        INSERT INTO view_entities (namespace, entity_id, slot, payload, updated_at)
-        VALUES ($1, $2, $3, $4::jsonb, NOW())
-        ON CONFLICT (namespace, entity_id) DO UPDATE SET
-          slot = EXCLUDED.slot,
-          payload = EXCLUDED.payload,
-          updated_at = NOW()
-      `;
-
-      for (const record of records) {
-        await client.query(sql, [
-          this.compiled.namespace,
-          record.entityId,
-          record.slot,
-          JSON.stringify(record.payload),
-        ]);
-      }
-
-      await client.query('COMMIT');
-      return records.length;
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
   private async upsertAccountCacheRecords(
     records: Array<{
       pubkey: string;
@@ -1685,55 +1549,5 @@ export class AppPackViewReadService {
       [tableName],
     );
     return result.rows[0]?.exists === true;
-  }
-
-  // Transitional one-time migration for previous MVP schema.
-  private async migrateLegacyOrcaTablesIfNeeded(): Promise<void> {
-    if (!this.pool) {
-      return;
-    }
-    const hasLegacyPools = await this.tableExists(LEGACY_ORCA_POOLS_TABLE);
-    const hasLegacyHistory = await this.tableExists(LEGACY_ORCA_HISTORY_TABLE);
-    if (!hasLegacyPools && !hasLegacyHistory) {
-      return;
-    }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-      if (hasLegacyPools) {
-        await client.query(
-          `
-            INSERT INTO view_entities (namespace, entity_id, slot, payload, updated_at)
-            SELECT
-              $1 AS namespace,
-              p.whirlpool AS entity_id,
-              p.updated_slot AS slot,
-              jsonb_build_object(
-                'whirlpool', p.whirlpool,
-                'tokenMintA', p.token_mint_a,
-                'tokenMintB', p.token_mint_b,
-                'tickSpacing', p.tick_spacing::text,
-                'liquidity', p.liquidity::text
-              ) AS payload,
-              NOW() AS updated_at
-            FROM orca_pools p
-            ON CONFLICT (namespace, entity_id) DO UPDATE SET
-              slot = EXCLUDED.slot,
-              payload = EXCLUDED.payload,
-              updated_at = NOW()
-          `,
-          [this.compiled.namespace],
-        );
-      }
-      await client.query(`DROP TABLE IF EXISTS ${LEGACY_ORCA_HISTORY_TABLE}`);
-      await client.query(`DROP TABLE IF EXISTS ${LEGACY_ORCA_POOLS_TABLE}`);
-      await client.query('COMMIT');
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
   }
 }
