@@ -208,6 +208,9 @@ type AppPackViewReadServiceOptions = {
 type DecodedAccountContext = {
   account: {
     pubkey: string;
+    slot?: number;
+    firstSeenSlot?: number;
+    lastSeenSlot?: number;
   };
   decoded: Record<string, unknown>;
   param: Record<string, unknown>;
@@ -1255,7 +1258,12 @@ export class AppPackViewReadService {
 
     const queryParams: unknown[] = [this.compiled.programId.toBase58(), this.compiled.accountSize];
     let sql = `
-      SELECT pubkey, slot::text AS slot, data_bytes
+      SELECT
+        pubkey,
+        slot::text AS slot,
+        first_seen_slot::text AS first_seen_slot,
+        last_seen_slot::text AS last_seen_slot,
+        data_bytes
       FROM ${ACCOUNT_CACHE_TABLE}
       WHERE owner_program_id = $1
         AND data_len = $2
@@ -1281,7 +1289,13 @@ export class AppPackViewReadService {
     queryParams.push(...indexedFilters.values);
     sql += '\nORDER BY slot DESC, pubkey ASC';
 
-    const result = await this.pool.query<{ pubkey: string; slot: string; data_bytes: unknown }>(sql, queryParams);
+    const result = await this.pool.query<{
+      pubkey: string;
+      slot: string;
+      first_seen_slot: string;
+      last_seen_slot: string;
+      data_bytes: unknown;
+    }>(sql, queryParams);
     if (result.rows.length === 0) {
       return null;
     }
@@ -1299,7 +1313,12 @@ export class AppPackViewReadService {
         continue;
       }
       const row: DecodedAccountContext = {
-        account: { pubkey: record.pubkey },
+        account: {
+          pubkey: record.pubkey,
+          slot: Number.parseInt(record.slot, 10) || 0,
+          firstSeenSlot: Number.parseInt(record.first_seen_slot, 10) || 0,
+          lastSeenSlot: Number.parseInt(record.last_seen_slot, 10) || 0,
+        },
         decoded,
         param: params,
         protocol: {
@@ -1356,9 +1375,20 @@ export class AppPackViewReadService {
     if (!this.pool) {
       return null;
     }
-    const result = await this.pool.query<{ pubkey: string; slot: string; data_bytes: unknown }>(
+    const result = await this.pool.query<{
+      pubkey: string;
+      slot: string;
+      first_seen_slot: string;
+      last_seen_slot: string;
+      data_bytes: unknown;
+    }>(
       `
-        SELECT pubkey, slot::text AS slot, data_bytes
+        SELECT
+          pubkey,
+          slot::text AS slot,
+          first_seen_slot::text AS first_seen_slot,
+          last_seen_slot::text AS last_seen_slot,
+          data_bytes
         FROM ${ACCOUNT_CACHE_TABLE}
         WHERE owner_program_id = $1
           AND pubkey = $2
@@ -1375,7 +1405,11 @@ export class AppPackViewReadService {
     if (!accountData) {
       return null;
     }
-    const selected = this.decodeAndSelect(pubkey, accountData, params);
+    const selected = this.decodeAndSelect(pubkey, accountData, params, {
+      slot: Number.parseInt(row.slot, 10) || 0,
+      firstSeenSlot: Number.parseInt(row.first_seen_slot, 10) || 0,
+      lastSeenSlot: Number.parseInt(row.last_seen_slot, 10) || 0,
+    });
     if (!selected) {
       return null;
     }
@@ -1391,6 +1425,7 @@ export class AppPackViewReadService {
     pubkey: string,
     accountData: Buffer,
     params: Record<string, unknown>,
+    accountMeta?: { slot?: number; firstSeenSlot?: number; lastSeenSlot?: number },
   ): Record<string, unknown> | null {
     let decoded: Record<string, unknown>;
     try {
@@ -1399,7 +1434,12 @@ export class AppPackViewReadService {
       return null;
     }
     const row: DecodedAccountContext = {
-      account: { pubkey },
+      account: {
+        pubkey,
+        slot: accountMeta?.slot ?? 0,
+        firstSeenSlot: accountMeta?.firstSeenSlot ?? 0,
+        lastSeenSlot: accountMeta?.lastSeenSlot ?? 0,
+      },
       decoded,
       param: params,
       protocol: {
