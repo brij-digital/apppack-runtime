@@ -304,6 +304,18 @@ function resolveReference(expression: unknown, context: Record<string, unknown>)
   return readByPath(context[base], path);
 }
 
+function resolveStaticReference(expression: unknown, context: Record<string, unknown>): unknown {
+  if (Array.isArray(expression)) {
+    return expression.map((item) => resolveStaticReference(item, context));
+  }
+  if (isObjectRecord(expression)) {
+    return Object.fromEntries(
+      Object.entries(expression).map(([key, value]) => [key, resolveStaticReference(value, context)]),
+    );
+  }
+  return resolveReference(expression, context);
+}
+
 function toBigIntSafe(value: unknown): bigint {
   if (typeof value === 'bigint') {
     return value;
@@ -574,6 +586,11 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
     if (view.bootstrap.kind !== 'scan_accounts' || view.bootstrap.source !== 'rpc.getProgramAccounts') {
       throw new Error(`Operation ${options.operationId} requires unsupported search bootstrap source.`);
     }
+    const staticContext = {
+      protocol: {
+        programId: options.programId,
+      },
+    };
     const accountType = view.query.decode?.account_type ?? view.bootstrap.account_type;
     const [pairParamA, pairParamB] = inferPairParamsFromView(operationInputDefs, view.query.filters);
     return {
@@ -584,7 +601,10 @@ function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: Ap
       outputMaxItems: operation.read_output?.max_items ?? view.query.limit ?? 20,
       pairParamA,
       pairParamB,
-      programId: parsePublicKey(view.bootstrap.program_id, 'bootstrap.program_id'),
+      programId: parsePublicKey(
+        String(resolveStaticReference(view.bootstrap.program_id, staticContext)),
+        'bootstrap.program_id',
+      ),
       accountType,
       accountSize: coder.size(accountType),
       discriminatorFilter: {

@@ -146,7 +146,7 @@ const META_V2 = {
         bootstrap: {
           kind: 'scan_accounts',
           source: 'rpc.getProgramAccounts',
-          program_id: PROGRAM_ID,
+          program_id: '$protocol.programId',
           account_type: 'Whirlpool',
           filters: [],
         },
