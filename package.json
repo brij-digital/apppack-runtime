@@ -1,10 +1,17 @@
 {
   "name": "@agentform/apppack-runtime",
-  "version": "0.1.8",
-  "private": true,
+  "version": "0.1.9",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/brij-digital/apppack-runtime.git"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -32,6 +39,9 @@
     "check": "tsc --noEmit -p tsconfig.json",
     "test": "npm run build && node --test test/**/*.test.mjs",
     "prepare": "npm run build"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
   },
   "dependencies": {
     "@coral-xyz/anchor": "^0.32.1",

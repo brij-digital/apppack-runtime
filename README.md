@@ -64,5 +64,5 @@ npm run test
 
 ## Versioning Notes
 
-This package is consumed from GitHub refs in downstream repos.
-When changing runtime behavior, update consumers to the new commit and run their CI.
+This package is published to GitHub Packages.
+When changing runtime behavior, release a new semver version, update downstream consumers, and run their CI.
