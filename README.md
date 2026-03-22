@@ -80,3 +80,12 @@ npm run test
 
 This package is published to GitHub Packages.
 When changing runtime behavior, release a new semver version, update downstream consumers, and run their CI.
+
+See [RELEASING.md](RELEASING.md) for the exact release flow.
+
+## Product Direction
+
+AppPack should be treated primarily as an agent-native execution platform with:
+- `apppack-runtime` as the shared protocol execution core
+- `apppack-view-service` as the indexed read/search backend
+- `ec-ai-wallet` as the reference client and pack-authoring surface

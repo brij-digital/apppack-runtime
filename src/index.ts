@@ -1,3 +1,3 @@
-export * from './idlDeclarativeRuntime';
-export * from './metaIdlRuntime';
-export * from './idlRegistry';
+export * from './idlDeclarativeRuntime.js';
+export * from './metaIdlRuntime.js';
+export * from './idlRegistry.js';

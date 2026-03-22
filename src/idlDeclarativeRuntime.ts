@@ -12,9 +12,9 @@ import {
   type Connection,
   type AccountMeta,
 } from '@solana/web3.js';
-import { getProtocolById } from './idlRegistry';
-import { normalizeIdlForAnchorCoder } from './normalizeIdl';
-import { resolveAppUrl } from './appUrl';
+import { getProtocolById } from './idlRegistry.js';
+import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
+import { resolveAppUrl } from './appUrl.js';
 
 type IdlProtocol = {
   id: string;

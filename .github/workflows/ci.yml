@@ -11,6 +11,22 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify version bump for runtime changes
+        if: github.event_name == 'pull_request'
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
+          if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(src/|test/|package\.json|tsconfig\.json)'; then
+            exit 0
+          fi
+          if printf '%s\n' "$CHANGED_FILES" | grep -q '^package.json$'; then
+            exit 0
+          fi
+          echo "Runtime source changed without a package.json version update."
+          exit 1
 
       - name: Setup Node
         uses: actions/setup-node@v4

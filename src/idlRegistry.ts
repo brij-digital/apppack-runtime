@@ -45,4 +45,4 @@ export async function getProtocolById(protocolId: string): Promise<ProtocolManif
 
   return manifest;
 }
-import { resolveAppUrl } from './appUrl';
+import { resolveAppUrl } from './appUrl.js';

@@ -2,7 +2,7 @@ import { BN, BorshAccountsCoder, utils } from '@coral-xyz/anchor';
 import type { Idl } from '@coral-xyz/anchor';
 import { PublicKey, type Connection, type Commitment, type GetProgramAccountsFilter } from '@solana/web3.js';
 import { Buffer } from 'buffer';
-import { resolveAppUrl } from './appUrl';
+import { resolveAppUrl } from './appUrl.js';
 
 export type DiscoverStepResolved = {
   name: string;

@@ -2,12 +2,12 @@ import { BN, BorshAccountsCoder } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import type { Idl } from '@coral-xyz/anchor';
-import { getProtocolById } from './idlRegistry';
-import { previewIdlInstruction } from './idlDeclarativeRuntime';
-import { runRegisteredComputeStep } from './metaComputeRegistry';
-import { runRegisteredDiscoverStep } from './metaDiscoverRegistry';
-import { normalizeIdlForAnchorCoder } from './normalizeIdl';
-import { resolveAppUrl } from './appUrl';
+import { getProtocolById } from './idlRegistry.js';
+import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
+import { runRegisteredComputeStep } from './metaComputeRegistry.js';
+import { runRegisteredDiscoverStep } from './metaDiscoverRegistry.js';
+import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
+import { resolveAppUrl } from './appUrl.js';
 
 const META_IDL_SCHEMA = 'meta-idl.v0.6';
 const META_IDL_CORE_SCHEMA = 'meta-idl.core.v0.6';
