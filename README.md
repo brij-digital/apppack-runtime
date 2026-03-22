@@ -1,4 +1,4 @@
-# @agentform/apppack-runtime
+# @brij-digital/apppack-runtime
 
 Shared runtime package for AppPack protocol execution.
 
@@ -36,11 +36,11 @@ Protocol-specific behavior belongs in pack data (`idl + meta + app`), not in run
 
 ## Exports
 
-- `@agentform/apppack-runtime`
-- `@agentform/apppack-runtime/idlDeclarativeRuntime`
-- `@agentform/apppack-runtime/metaIdlRuntime`
-- `@agentform/apppack-runtime/idlRegistry`
-- `@agentform/apppack-runtime/node/view-read-service`
+- `@brij-digital/apppack-runtime`
+- `@brij-digital/apppack-runtime/idlDeclarativeRuntime`
+- `@brij-digital/apppack-runtime/metaIdlRuntime`
+- `@brij-digital/apppack-runtime/idlRegistry`
+- `@brij-digital/apppack-runtime/node/view-read-service`
 
 ## Scripts
 
