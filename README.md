@@ -16,6 +16,17 @@ Used by:
 - `meta_app.schema.v0.1.json`
 
 Downstream repos should sync these files from runtime and treat local copies as generated artifacts.
+Because these files are JSON, downstream copies cannot carry inline comment headers.
+The ownership marker is instead:
+- this README
+- the downstream directory README
+- the sync/check scripts
+- CI drift checks
+
+If you need to change a shared schema:
+- edit only [`schemas/`](/home/ubuntu/src/apppack-runtime/schemas)
+- run `npm run schemas:check`
+- then sync downstream repos instead of editing their copies
 
 ## Repo Relationship
 
@@ -72,11 +83,13 @@ Protocol-specific behavior belongs in pack data (`idl + meta + app`), not in run
 ```bash
 npm run build
 npm run check
+npm run schemas:check
 npm run test
 ```
 
 - `build`: TypeScript build to `dist/`
 - `check`: type-check only
+- `schemas:check`: validate the runtime-owned schema set and required top-level fields
 - `test`: build + node test suite
 
 ## Package Layout
