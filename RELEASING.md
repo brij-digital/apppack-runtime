@@ -37,3 +37,26 @@ If anything under `schemas/` changes:
 1. run `npm run schemas:check`
 2. sync downstream schema copies
 3. make sure downstream drift checks pass before release
+
+## Shared Contract Change Order
+
+When a shared contract changes, use this order:
+
+1. update schema files in [`schemas/`](/home/ubuntu/src/apppack-runtime/schemas)
+2. update runtime validation/tests if needed
+3. release a new runtime version
+4. update wallet pack generator or pack source if needed
+5. regenerate wallet outputs
+6. sync downstream consumers
+7. run downstream drift/smoke checks
+8. only then update backend/frontend runtime code that depends on the new contract
+
+Do not edit downstream copies first and backfill ownership later.
+
+## Breaking Change Rule
+
+If a shared schema or shared contract changes in a breaking way:
+
+1. bump the runtime version deliberately
+2. update downstream consumers deliberately
+3. do not rely on silent compatibility through copied artifacts
