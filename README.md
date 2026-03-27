@@ -6,6 +6,17 @@ Used by:
 - `ec-ai-wallet` (browser app)
 - `apppack-view-service` (node read/index service)
 
+## Shared Schemas
+
+`schemas/` is the source of truth for shared AppPack schema files:
+- `meta_idl.schema.v0.6.json`
+- `meta_idl.core.schema.v0.6.json`
+- `meta_view.schema.v0.2.json`
+- `meta_view.schema.v0.3.json`
+- `meta_app.schema.v0.1.json`
+
+Downstream repos should sync these files from runtime and treat local copies as generated artifacts.
+
 ## Repo Relationship
 
 These are the three main AppPack repositories:

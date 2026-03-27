@@ -29,3 +29,11 @@ git push origin v0.1.10
 ```
 
 The workflow will reject `v0.1.11` if `package.json` still says `0.1.10`.
+
+## Shared Schema Rule
+
+If anything under `schemas/` changes:
+
+1. run `npm run schemas:check`
+2. sync downstream schema copies
+3. make sure downstream drift checks pass before release

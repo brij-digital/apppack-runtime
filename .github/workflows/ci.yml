@@ -19,7 +19,7 @@ jobs:
         run: |
           BASE_REF="${{ github.base_ref }}"
           CHANGED_FILES="$(git diff --name-only "origin/${BASE_REF}...HEAD")"
-          if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(src/|test/|package\.json|tsconfig\.json)'; then
+          if ! printf '%s\n' "$CHANGED_FILES" | grep -Eq '^(src/|test/|schemas/|scripts/check-shared-schemas\.mjs|package\.json|tsconfig\.json)'; then
             exit 0
           fi
           if printf '%s\n' "$CHANGED_FILES" | grep -q '^package.json$'; then
@@ -36,6 +36,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Check shared schemas
+        run: npm run schemas:check
 
       - name: Type check
         run: npm run check

@@ -1,6 +1,6 @@
 {
   "name": "@brij-digital/apppack-runtime",
-  "version": "0.1.10",
+  "version": "0.1.11",
   "type": "module",
   "repository": {
     "type": "git",
@@ -10,6 +10,7 @@
   "types": "dist/index.d.ts",
   "files": [
     "dist",
+    "schemas",
     "README.md"
   ],
   "exports": {
@@ -32,11 +33,13 @@
     "./node/view-read-service": {
       "types": "./dist/node/view-read-service.d.ts",
       "import": "./dist/node/view-read-service.js"
-    }
+    },
+    "./schemas/*": "./schemas/*"
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
+    "schemas:check": "node scripts/check-shared-schemas.mjs",
     "test": "npm run build && node --test test/**/*.test.mjs",
     "prepare": "npm run build"
   },
