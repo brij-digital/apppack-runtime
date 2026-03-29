@@ -1257,7 +1257,28 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
   };
 
   const appSpec = toMetaAppSpec(await loadJsonByPath(appPath), protocolId, appPath);
+  const runtimeSpec = protocol.runtimeSpecPath
+    ? toRuntimeOperationSpec(
+        await loadJsonByPath(protocol.runtimeSpecPath),
+        protocolId,
+        protocol.runtimeSpecPath,
+      )
+    : null;
   const resolvedApps = appSpec.apps ?? {};
+  const mergedTemplates =
+    appSpec.templates || runtimeSpec?.templates
+      ? {
+          ...(appSpec.templates ?? {}),
+          ...(runtimeSpec?.templates ?? {}),
+        }
+      : undefined;
+  const mergedOperations =
+    appSpec.operations || runtimeSpec?.operations
+      ? {
+          ...(appSpec.operations ?? {}),
+          ...(runtimeSpec?.operations ?? {}),
+        }
+      : undefined;
 
   const merged: MetaIdlSpec = {
     schema: META_IDL_SCHEMA,
@@ -1265,8 +1286,8 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
     protocolId: appSpec.protocolId,
     ...(typeof appSpec.label === 'string' ? { label: appSpec.label } : {}),
     ...(appSpec.sources ? { sources: appSpec.sources } : {}),
-    ...(appSpec.templates ? { templates: appSpec.templates } : {}),
-    ...(appSpec.operations ? { operations: appSpec.operations } : {}),
+    ...(mergedTemplates ? { templates: mergedTemplates } : {}),
+    ...(mergedOperations ? { operations: mergedOperations } : {}),
     apps: resolvedApps,
   };
 
