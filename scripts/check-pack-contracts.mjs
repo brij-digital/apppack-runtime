@@ -22,6 +22,13 @@ async function loadJson(filePath) {
   return JSON.parse(raw);
 }
 
+function asObject(value, label) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    fail(`${label} must be a JSON object.`);
+  }
+  return value;
+}
+
 async function assertFile(filePath) {
   await fs.access(filePath).catch(() => fail(`Missing required file: ${filePath}`));
 }
@@ -47,7 +54,7 @@ async function main() {
       fail(`Protocol ${protocol.id} has invalid idlPath.`);
     }
 
-    for (const key of ['idlPath', 'metaPath', 'metaCorePath', 'appPath']) {
+    for (const key of ['idlPath', 'codamaIdlPath', 'runtimeSpecPath', 'metaPath', 'metaCorePath', 'appPath']) {
       const value = protocol[key];
       if (value == null) {
         continue;
@@ -69,6 +76,38 @@ async function main() {
       if (key === 'appPath') {
         if (typeof parsed.schema !== 'string' || !parsed.schema.startsWith('meta-app')) {
           fail(`${filePath} has invalid app schema marker.`);
+        }
+      }
+      if (key === 'runtimeSpecPath') {
+        if (parsed.schema !== 'declarative-decoder-runtime.v1') {
+          fail(`${filePath} has invalid declarative runtime schema marker.`);
+        }
+        const runtime = asObject(parsed, `${filePath}`);
+        const decoderArtifacts = asObject(runtime.decoderArtifacts, `${filePath}.decoderArtifacts`);
+        for (const [artifactName, artifactValue] of Object.entries(decoderArtifacts)) {
+          const artifact = asObject(artifactValue, `${filePath}.decoderArtifacts.${artifactName}`);
+          if (artifact.family === 'codama') {
+            if (typeof artifact.codamaPath !== 'string' || !artifact.codamaPath.startsWith('/idl/')) {
+              fail(`${filePath}.decoderArtifacts.${artifactName} requires codamaPath.`);
+            }
+            const codamaPath = path.join(packDir, artifact.codamaPath.slice('/idl/'.length));
+            await assertFile(codamaPath);
+            const codama = await loadJson(codamaPath);
+            if (codama.standard !== 'codama') {
+              fail(`${codamaPath} is not a Codama IDL.`);
+            }
+          }
+          if (artifact.codecIdlPath != null) {
+            if (typeof artifact.codecIdlPath !== 'string' || !artifact.codecIdlPath.startsWith('/idl/')) {
+              fail(`${filePath}.decoderArtifacts.${artifactName} has invalid codecIdlPath.`);
+            }
+            await assertFile(path.join(packDir, artifact.codecIdlPath.slice('/idl/'.length)));
+          }
+        }
+      }
+      if (key === 'codamaIdlPath') {
+        if (parsed.standard !== 'codama') {
+          fail(`${filePath} is not a Codama IDL.`);
         }
       }
     }

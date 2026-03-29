@@ -14,6 +14,7 @@ Used by:
 - `meta_view.schema.v0.2.json`
 - `meta_view.schema.v0.3.json`
 - `meta_app.schema.v0.1.json`
+- `declarative_decoder_runtime.schema.v1.json`
 
 Downstream repos should sync these files from runtime and treat local copies as generated artifacts.
 Because these files are JSON, downstream copies cannot carry inline comment headers.
@@ -69,6 +70,10 @@ In other words, `account` does not mean "stale cached forever".
 It means the view starts from a known address instead of a discovery scan.
 
 Protocol-specific behavior belongs in pack data (`idl + meta + app`), not in runtime code.
+For indexing/runtime ownership, the intended split is:
+- `Codama IDL`: declarative protocol description
+- `declarative runtime spec`: declarative indexing contract
+- `MetaIDL/AppSpec`: declarative read/execution surface
 
 ## Exports
 
