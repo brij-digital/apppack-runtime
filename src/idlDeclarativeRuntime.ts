@@ -1,4 +1,5 @@
-import anchorPkg, { type Idl } from '@coral-xyz/anchor';
+import * as anchorPkg from '@coral-xyz/anchor';
+import type { Idl } from '@coral-xyz/anchor';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import {
   PublicKey,

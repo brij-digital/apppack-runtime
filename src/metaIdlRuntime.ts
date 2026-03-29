@@ -1,4 +1,4 @@
-import anchorPkg from '@coral-xyz/anchor';
+import * as anchorPkg from '@coral-xyz/anchor';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import type { Idl } from '@coral-xyz/anchor';
