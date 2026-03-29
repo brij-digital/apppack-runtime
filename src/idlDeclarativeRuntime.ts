@@ -1,9 +1,4 @@
-import {
-  BN,
-  BorshAccountsCoder,
-  BorshInstructionCoder,
-  type Idl,
-} from '@coral-xyz/anchor';
+import anchorPkg, { type Idl } from '@coral-xyz/anchor';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import {
   PublicKey,
@@ -20,6 +15,8 @@ import {
 } from './idlRegistry.js';
 import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
 import { resolveAppUrl } from './appUrl.js';
+
+const { BN, BorshAccountsCoder, BorshInstructionCoder } = anchorPkg;
 
 type IdlInstructionAccount = {
   name: string;
@@ -99,7 +96,7 @@ function toBase64(data: Uint8Array): string {
 
 function serializeForUi(value: unknown): unknown {
   if (BN.isBN(value)) {
-    return (value as BN).toString();
+    return (value as { toString(): string }).toString();
   }
 
   if (value instanceof PublicKey) {
