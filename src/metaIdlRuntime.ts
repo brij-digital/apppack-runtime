@@ -12,6 +12,7 @@ import { resolveAppUrl } from './appUrl.js';
 const META_IDL_SCHEMA = 'meta-idl.v0.6';
 const META_IDL_CORE_SCHEMA = 'meta-idl.core.v0.6';
 const META_APP_SCHEMA = 'meta-app.v0.1';
+const DECLARATIVE_RUNTIME_SCHEMA = 'declarative-decoder-runtime.v1';
 const DEFAULT_SPL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 
@@ -280,6 +281,15 @@ type MetaIdlSpec = {
   apps: Record<string, UserAppSpec>;
 };
 
+type RuntimeOperationSpec = {
+  schema: string;
+  version: string;
+  protocolId: string;
+  label?: string;
+  templates?: Record<string, TemplateSpec>;
+  operations?: Record<string, ActionSpec>;
+};
+
 type ResolverContext = {
   protocol: {
     id: string;
@@ -545,6 +555,7 @@ function normalizeReadOutputSpec(
 }
 
 const metaCache = new Map<string, MetaIdlSpec>();
+const operationMetaCache = new Map<string, MetaIdlSpec>();
 const idlCache = new Map<string, Idl>();
 const lookupSourceCache = new Map<string, { expiresAt: number; items: unknown[] }>();
 
@@ -822,6 +833,19 @@ function assertMetaSpec(meta: MetaIdlSpec, protocolId: string): MetaIdlSpec {
   return meta;
 }
 
+function assertOperationMetaSpec(meta: MetaIdlSpec, protocolId: string): MetaIdlSpec {
+  if (meta.protocolId !== protocolId) {
+    throw new Error(`Operation spec protocolId mismatch: expected ${protocolId}, got ${meta.protocolId}.`);
+  }
+
+  const hasOperations = !!meta.operations && typeof meta.operations === 'object';
+  if (!hasOperations) {
+    throw new Error(`Operation spec for ${protocolId} is missing operations.`);
+  }
+
+  return meta;
+}
+
 function isObject(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -865,6 +889,25 @@ function toMetaAppSpec(value: unknown, protocolId: string, sourcePath: string): 
     throw new Error(`Meta app for ${protocolId} is missing apps object (${sourcePath}).`);
   }
   return value as MetaAppSpec;
+}
+
+function toRuntimeOperationSpec(value: unknown, protocolId: string, sourcePath: string): RuntimeOperationSpec {
+  if (!isObject(value)) {
+    throw new Error(`Invalid declarative runtime for ${protocolId}: ${sourcePath} must be an object.`);
+  }
+  const schema = asString(value.schema, `${protocolId}:${sourcePath}.schema`);
+  if (schema !== DECLARATIVE_RUNTIME_SCHEMA) {
+    throw new Error(
+      `Unsupported declarative runtime schema for ${protocolId}: ${schema}. Required: ${DECLARATIVE_RUNTIME_SCHEMA}.`,
+    );
+  }
+  const protocolInFile = asString(value.protocolId, `${protocolId}:${sourcePath}.protocolId`);
+  if (protocolInFile !== protocolId) {
+    throw new Error(
+      `Declarative runtime protocolId mismatch in ${sourcePath}: expected ${protocolId}, got ${protocolInFile}.`,
+    );
+  }
+  return value as RuntimeOperationSpec;
 }
 
 function resolveOperationSpec(meta: MetaIdlSpec, protocolId: string, operationId: string): ActionSpec {
@@ -1230,6 +1273,46 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
   return asserted;
 }
 
+async function loadOperationMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
+  if (operationMetaCache.has(protocolId)) {
+    return operationMetaCache.get(protocolId)!;
+  }
+
+  const protocol = await getProtocolById(protocolId);
+
+  const loadJsonByPath = async (filePath: string): Promise<unknown> => {
+    const response = await fetch(resolveAppUrl(filePath));
+    if (!response.ok) {
+      throw new Error(`Failed to load JSON from ${filePath}.`);
+    }
+    return response.json();
+  };
+
+  let merged: MetaIdlSpec;
+  if (protocol.runtimeSpecPath) {
+    const runtimeSpec = toRuntimeOperationSpec(
+      await loadJsonByPath(protocol.runtimeSpecPath),
+      protocolId,
+      protocol.runtimeSpecPath,
+    );
+    merged = {
+      schema: META_IDL_SCHEMA,
+      version: runtimeSpec.version,
+      protocolId: runtimeSpec.protocolId,
+      ...(typeof runtimeSpec.label === 'string' ? { label: runtimeSpec.label } : {}),
+      ...(runtimeSpec.templates ? { templates: runtimeSpec.templates } : {}),
+      ...(runtimeSpec.operations ? { operations: runtimeSpec.operations } : {}),
+      apps: {},
+    };
+  } else {
+    merged = await loadMetaSpec(protocolId);
+  }
+
+  const asserted = assertOperationMetaSpec(merged, protocolId);
+  operationMetaCache.set(protocolId, asserted);
+  return asserted;
+}
+
 async function loadProtocolIdl(protocolId: string): Promise<Idl> {
   if (idlCache.has(protocolId)) {
     return idlCache.get(protocolId)!;
@@ -1489,7 +1572,7 @@ async function prepareMetaOperationInternal(options: {
 }): Promise<PreparedMetaOperation> {
   const protocol = await getProtocolById(options.protocolId);
   const codecIdlPath = await resolveProtocolCodecIdlPath(options.protocolId);
-  const meta = await loadMetaSpec(options.protocolId);
+  const meta = await loadOperationMetaSpec(options.protocolId);
   const idl = await loadProtocolIdl(options.protocolId);
 
   const operationSpec = resolveOperationSpec(meta, options.protocolId, options.operationId);
@@ -1637,7 +1720,7 @@ export async function explainMetaOperation(options: {
   protocolId: string;
   operationId: string;
 }): Promise<MetaOperationExplain> {
-  const meta = await loadMetaSpec(options.protocolId);
+  const meta = await loadOperationMetaSpec(options.protocolId);
   const operationSpec = resolveOperationSpec(meta, options.protocolId, options.operationId);
   const materialized = materializeOperation(options.operationId, operationSpec, meta);
   const readOutput = normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`);
@@ -1671,7 +1754,7 @@ export async function listMetaOperations(options: {
   version: string;
   operations: MetaOperationSummary[];
 }> {
-  const meta = await loadMetaSpec(options.protocolId);
+  const meta = await loadOperationMetaSpec(options.protocolId);
   const operations = meta.operations ?? {};
 
   const summaries = Object.entries(operations)
