@@ -263,6 +263,9 @@ type MetaAppSpec = {
   version: string;
   protocolId: string;
   label?: string;
+  sources?: Record<string, LookupSourceSpec>;
+  templates?: Record<string, TemplateSpec>;
+  operations?: Record<string, ActionSpec>;
   apps: Record<string, UserAppSpec>;
 };
 
@@ -1197,12 +1200,7 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
   }
 
   const protocol = await getProtocolById(protocolId);
-  const corePath = protocol.metaCorePath ?? protocol.metaPath;
-  if (!corePath) {
-    throw new Error(
-      `Protocol ${protocolId} does not define metaCorePath or metaPath in registry.`,
-    );
-  }
+  const corePath = protocol.metaCorePath ?? protocol.metaPath ?? null;
 
   const loadJsonByPath = async (filePath: string): Promise<unknown> => {
     const response = await fetch(resolveAppUrl(filePath));
@@ -1212,30 +1210,24 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
     return response.json();
   };
 
-  const coreSpec = toMetaCoreSpec(await loadJsonByPath(corePath), protocolId, corePath);
-  const isLegacyCombined = coreSpec.schema === META_IDL_SCHEMA;
+  const coreSpec = corePath ? toMetaCoreSpec(await loadJsonByPath(corePath), protocolId, corePath) : null;
+  const isLegacyCombined = coreSpec?.schema === META_IDL_SCHEMA;
 
-  const appPath = isLegacyCombined
-    ? null
-    : (() => {
-        if (!protocol.appPath) {
-          throw new Error(`Protocol ${protocolId} is missing appPath for ${META_APP_SCHEMA}.`);
-        }
-        return protocol.appPath;
-      })();
+  const appPath = isLegacyCombined ? null : protocol.appPath ?? null;
+  const appSpec = appPath ? toMetaAppSpec(await loadJsonByPath(appPath), protocolId, appPath) : null;
 
   const resolvedApps = isLegacyCombined
-    ? (coreSpec.apps ?? {})
-    : toMetaAppSpec(await loadJsonByPath(appPath!), protocolId, appPath!).apps;
+    ? (coreSpec?.apps ?? {})
+    : (appSpec?.apps ?? {});
 
   const merged: MetaIdlSpec = {
     schema: META_IDL_SCHEMA,
-    version: coreSpec.version,
-    protocolId: coreSpec.protocolId,
-    ...(typeof coreSpec.label === 'string' ? { label: coreSpec.label } : {}),
-    ...(coreSpec.sources ? { sources: coreSpec.sources } : {}),
-    ...(coreSpec.templates ? { templates: coreSpec.templates } : {}),
-    ...(coreSpec.operations ? { operations: coreSpec.operations } : {}),
+    version: (appSpec?.version ?? coreSpec?.version)!,
+    protocolId: (appSpec?.protocolId ?? coreSpec?.protocolId)!,
+    ...(typeof (appSpec?.label ?? coreSpec?.label) === 'string' ? { label: appSpec?.label ?? coreSpec?.label } : {}),
+    ...((appSpec?.sources ?? coreSpec?.sources) ? { sources: appSpec?.sources ?? coreSpec?.sources } : {}),
+    ...((appSpec?.templates ?? coreSpec?.templates) ? { templates: appSpec?.templates ?? coreSpec?.templates } : {}),
+    ...((appSpec?.operations ?? coreSpec?.operations) ? { operations: appSpec?.operations ?? coreSpec?.operations } : {}),
     apps: resolvedApps,
   };
 
