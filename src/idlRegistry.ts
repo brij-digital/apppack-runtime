@@ -1,9 +1,11 @@
+import { resolveAppUrl } from './appUrl.js';
+
 export type ProtocolManifest = {
   id: string;
   name: string;
   network: string;
   programId: string;
-  idlPath: string;
+  idlPath?: string;
   codamaIdlPath?: string;
   runtimeSpecPath?: string;
   appPath: string;
@@ -18,7 +20,20 @@ type RegistryShape = {
   protocols: ProtocolManifest[];
 };
 
+type RuntimeDecoderArtifact = {
+  idlPath?: string;
+  codecIdlPath?: string;
+};
+
+type RuntimeSpecShape = {
+  schema: string;
+  protocolId: string;
+  decoderArtifacts?: Record<string, RuntimeDecoderArtifact>;
+};
+
 let registryCache: RegistryShape | null = null;
+const runtimeSpecCache = new Map<string, RuntimeSpecShape | null>();
+const codecIdlPathCache = new Map<string, string>();
 
 export async function loadRegistry(): Promise<RegistryShape> {
   if (registryCache) {
@@ -45,4 +60,70 @@ export async function getProtocolById(protocolId: string): Promise<ProtocolManif
 
   return manifest;
 }
-import { resolveAppUrl } from './appUrl.js';
+
+async function loadJsonByPath<T>(filePath: string): Promise<T> {
+  const response = await fetch(resolveAppUrl(filePath));
+  if (!response.ok) {
+    throw new Error(`Failed to load JSON from ${filePath}.`);
+  }
+  return (await response.json()) as T;
+}
+
+export async function loadProtocolRuntimeSpec(protocolId: string): Promise<RuntimeSpecShape | null> {
+  if (runtimeSpecCache.has(protocolId)) {
+    return runtimeSpecCache.get(protocolId)!;
+  }
+
+  const manifest = await getProtocolById(protocolId);
+  if (!manifest.runtimeSpecPath) {
+    runtimeSpecCache.set(protocolId, null);
+    return null;
+  }
+
+  const parsed = await loadJsonByPath<RuntimeSpecShape>(manifest.runtimeSpecPath);
+  if (parsed.schema !== 'declarative-decoder-runtime.v1') {
+    throw new Error(`Protocol ${protocolId} runtime spec at ${manifest.runtimeSpecPath} is not declarative-decoder-runtime.v1.`);
+  }
+  if (parsed.protocolId !== protocolId) {
+    throw new Error(`Protocol ${protocolId} runtime spec protocolId mismatch: ${parsed.protocolId}.`);
+  }
+
+  runtimeSpecCache.set(protocolId, parsed);
+  return parsed;
+}
+
+export async function resolveProtocolCodecIdlPath(protocolId: string): Promise<string> {
+  if (codecIdlPathCache.has(protocolId)) {
+    return codecIdlPathCache.get(protocolId)!;
+  }
+
+  const manifest = await getProtocolById(protocolId);
+  const runtimeSpec = await loadProtocolRuntimeSpec(protocolId);
+  const runtimeCodecPaths = new Set<string>();
+
+  for (const artifact of Object.values(runtimeSpec?.decoderArtifacts ?? {})) {
+    if (typeof artifact.codecIdlPath === 'string' && artifact.codecIdlPath.length > 0) {
+      runtimeCodecPaths.add(artifact.codecIdlPath);
+      continue;
+    }
+    if (typeof artifact.idlPath === 'string' && artifact.idlPath.length > 0) {
+      runtimeCodecPaths.add(artifact.idlPath);
+    }
+  }
+
+  const resolved =
+    runtimeCodecPaths.size === 1
+      ? Array.from(runtimeCodecPaths)[0]
+      : runtimeCodecPaths.size > 1
+        ? (() => {
+            throw new Error(`Protocol ${protocolId} declares multiple codec IDL paths in runtime spec; resolve the ambiguity before execution.`);
+          })()
+        : manifest.idlPath;
+
+  if (!resolved) {
+    throw new Error(`Protocol ${protocolId} has no codec IDL path; migrated execution must provide one via runtimeSpec.decoderArtifacts.*.codecIdlPath.`);
+  }
+
+  codecIdlPathCache.set(protocolId, resolved);
+  return resolved;
+}

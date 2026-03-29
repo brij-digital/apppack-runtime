@@ -50,10 +50,6 @@ async function main() {
     if (typeof protocol.id !== 'string' || protocol.id.trim().length === 0) {
       fail('Registry protocol entry is missing id.');
     }
-    if (typeof protocol.idlPath !== 'string' || !protocol.idlPath.startsWith('/idl/')) {
-      fail(`Protocol ${protocol.id} has invalid idlPath.`);
-    }
-
     for (const key of ['idlPath', 'codamaIdlPath', 'runtimeSpecPath', 'appPath']) {
       const value = protocol[key];
       if (value == null) {

@@ -75,6 +75,9 @@ For indexing/runtime ownership, the intended split is:
 - `declarative runtime spec`: declarative indexing contract
 - `app spec`: declarative product / agent flow
 
+For migrated protocols, `idlPath` is compatibility-only.
+Active execution should resolve any required codec IDL from `runtimeSpec.decoderArtifacts.*.codecIdlPath` instead of treating `registry.idlPath` as structural truth.
+
 `meta_idl` and `meta_idl.core` are now legacy transitional schemas.
 Do not add new protocol truth or new indexing logic there.
 New work should go into:

@@ -12,29 +12,14 @@ import {
   type Connection,
   type AccountMeta,
 } from '@solana/web3.js';
-import { getProtocolById } from './idlRegistry.js';
+import {
+  getProtocolById,
+  loadRegistry,
+  resolveProtocolCodecIdlPath,
+  type ProtocolManifest,
+} from './idlRegistry.js';
 import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
 import { resolveAppUrl } from './appUrl.js';
-
-type IdlProtocol = {
-  id: string;
-  name: string;
-  network: string;
-  programId: string;
-  idlPath: string;
-  codamaIdlPath?: string;
-  runtimeSpecPath?: string;
-  appPath: string;
-  transport: string;
-  supportedCommands: string[];
-  status: 'active' | 'inactive';
-};
-
-type RegistryShape = {
-  version?: string;
-  globalCommands?: string[];
-  protocols: IdlProtocol[];
-};
 
 type IdlInstructionAccount = {
   name: string;
@@ -331,8 +316,8 @@ function normalizeValueByIdlType(idl: Idl, type: IdlTypeRef | unknown, value: un
   return value;
 }
 
-async function loadProtocolAndIdl(protocolId: string): Promise<{ protocol: IdlProtocol; idl: Idl }> {
-  const protocol = (await getProtocolById(protocolId)) as IdlProtocol;
+async function loadProtocolAndIdl(protocolId: string): Promise<{ protocol: ProtocolManifest; idl: Idl }> {
+  const protocol = await getProtocolById(protocolId);
 
   if (idlCache.has(protocol.id)) {
     return {
@@ -341,9 +326,10 @@ async function loadProtocolAndIdl(protocolId: string): Promise<{ protocol: IdlPr
     };
   }
 
-  const response = await fetch(resolveAppUrl(protocol.idlPath));
+  const codecIdlPath = await resolveProtocolCodecIdlPath(protocolId);
+  const response = await fetch(resolveAppUrl(codecIdlPath));
   if (!response.ok) {
-    throw new Error(`Failed to load IDL file ${protocol.idlPath}`);
+    throw new Error(`Failed to load codec IDL file ${codecIdlPath}`);
   }
 
   const parsed = normalizeIdlForAnchorCoder((await response.json()) as Idl);
@@ -529,7 +515,8 @@ export async function listIdlProtocols(): Promise<{
       name: string;
       network: string;
       programId: string;
-      idlPath: string;
+      idlPath: string | null;
+      codecIdlPath: string | null;
       codamaIdlPath: string | null;
       runtimeSpecPath: string | null;
       appPath: string;
@@ -537,12 +524,17 @@ export async function listIdlProtocols(): Promise<{
       status: 'active' | 'inactive';
     }>;
 }> {
-  const registryResponse = await fetch(resolveAppUrl('/idl/registry.json'));
-  if (!registryResponse.ok) {
-    throw new Error('Failed to load IDL registry.');
-  }
-
-  const registry = (await registryResponse.json()) as RegistryShape;
+  const registry = await loadRegistry();
+  const codecPathByProtocol = new Map<string, string | null>();
+  await Promise.all(
+    registry.protocols.map(async (protocol) => {
+      try {
+        codecPathByProtocol.set(protocol.id, await resolveProtocolCodecIdlPath(protocol.id));
+      } catch {
+        codecPathByProtocol.set(protocol.id, null);
+      }
+    }),
+  );
   return {
     version: typeof registry.version === 'string' ? registry.version : null,
     globalCommands: Array.isArray(registry.globalCommands)
@@ -553,7 +545,8 @@ export async function listIdlProtocols(): Promise<{
       name: protocol.name,
       network: protocol.network,
       programId: protocol.programId,
-      idlPath: protocol.idlPath,
+      idlPath: protocol.idlPath ?? null,
+      codecIdlPath: codecPathByProtocol.get(protocol.id) ?? null,
       codamaIdlPath: protocol.codamaIdlPath ?? null,
       runtimeSpecPath: protocol.runtimeSpecPath ?? null,
       appPath: protocol.appPath,

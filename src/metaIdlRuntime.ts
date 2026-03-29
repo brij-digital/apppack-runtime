@@ -2,7 +2,7 @@ import { BN, BorshAccountsCoder } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import { PublicKey, type Connection } from '@solana/web3.js';
 import type { Idl } from '@coral-xyz/anchor';
-import { getProtocolById } from './idlRegistry.js';
+import { getProtocolById, resolveProtocolCodecIdlPath } from './idlRegistry.js';
 import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
 import { runRegisteredComputeStep } from './metaComputeRegistry.js';
 import { runRegisteredDiscoverStep } from './metaDiscoverRegistry.js';
@@ -286,7 +286,7 @@ type ResolverContext = {
     name: string;
     network: string;
     programId: string;
-    idlPath: string;
+    codecIdlPath: string | null;
     appPath: string;
   };
   meta: MetaIdlSpec;
@@ -1232,10 +1232,10 @@ async function loadProtocolIdl(protocolId: string): Promise<Idl> {
     return idlCache.get(protocolId)!;
   }
 
-  const protocol = await getProtocolById(protocolId);
-  const response = await fetch(resolveAppUrl(protocol.idlPath));
+  const codecIdlPath = await resolveProtocolCodecIdlPath(protocolId);
+  const response = await fetch(resolveAppUrl(codecIdlPath));
   if (!response.ok) {
-    throw new Error(`Failed to load IDL from ${protocol.idlPath}`);
+    throw new Error(`Failed to load codec IDL from ${codecIdlPath}`);
   }
 
   const parsed = normalizeIdlForAnchorCoder((await response.json()) as Idl);
@@ -1485,6 +1485,7 @@ async function prepareMetaOperationInternal(options: {
   walletPublicKey: PublicKey;
 }): Promise<PreparedMetaOperation> {
   const protocol = await getProtocolById(options.protocolId);
+  const codecIdlPath = await resolveProtocolCodecIdlPath(options.protocolId);
   const meta = await loadMetaSpec(options.protocolId);
   const idl = await loadProtocolIdl(options.protocolId);
 
@@ -1515,7 +1516,7 @@ async function prepareMetaOperationInternal(options: {
       name: protocol.name,
       network: protocol.network,
       programId: protocol.programId,
-      idlPath: protocol.idlPath,
+      codecIdlPath,
       appPath: protocol.appPath,
     },
     meta,
