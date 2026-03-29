@@ -1199,6 +1199,9 @@ async function loadMetaSpec(protocolId: string): Promise<MetaIdlSpec> {
 
   const protocol = await getProtocolById(protocolId);
   const appPath = protocol.appPath;
+  if (!appPath) {
+    throw new Error(`Protocol ${protocolId} has no appPath; app-spec runtime is disabled for this protocol.`);
+  }
 
   const loadJsonByPath = async (filePath: string): Promise<unknown> => {
     const response = await fetch(resolveAppUrl(filePath));
