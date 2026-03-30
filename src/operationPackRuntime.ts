@@ -1,14 +1,3 @@
-import type { Connection } from '@solana/web3.js';
-import { PublicKey } from '@solana/web3.js';
-import type {
-  PreparedMetaInstruction,
-  PreparedMetaOperation,
-} from './metaIdlRuntime.js';
-import {
-  explainMetaOperation,
-  prepareMetaInstruction,
-  prepareMetaOperation,
-} from './metaIdlRuntime.js';
 import {
   getProtocolById,
   loadProtocolRuntimeSpec,
@@ -84,11 +73,12 @@ type RuntimeOperationSpec = {
   };
 };
 
-type RuntimePack = {
+export type RuntimePack = {
   schema: 'declarative-decoder-runtime.v1';
   version: string;
   protocolId: string;
   label?: string;
+  sources?: Record<string, unknown>;
   templates?: Record<string, TemplateSpec>;
   operations?: Record<string, RuntimeOperationSpec>;
 };
@@ -118,7 +108,7 @@ type AppPack = {
   apps: Record<string, unknown>;
 };
 
-type MaterializedRuntimeOperation = {
+export type MaterializedRuntimeOperation = {
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
   discover: unknown[];
@@ -468,7 +458,7 @@ function mergeOperationFragment(
   }
 }
 
-function materializeRuntimeOperation(
+export function materializeRuntimeOperation(
   operationId: string,
   operation: RuntimeOperationSpec,
   pack: RuntimePack,
@@ -946,34 +936,6 @@ export async function listApps(options: {
 
 function isPlainObject(value: unknown): value is JsonRecord {
   return Boolean(value && typeof value === 'object' && !Array.isArray(value));
-}
-
-export async function prepareRuntimeOperationBridge(options: {
-  protocolId: string;
-  operationId: string;
-  input: Record<string, unknown>;
-  connection: Connection;
-  walletPublicKey: PublicKey;
-}): Promise<PreparedMetaOperation> {
-  return prepareMetaOperation(options);
-}
-
-export async function prepareRuntimeInstructionBridge(options: {
-  protocolId: string;
-  operationId: string;
-  input: Record<string, unknown>;
-  connection: Connection;
-  walletPublicKey: PublicKey;
-}): Promise<PreparedMetaInstruction> {
-  return prepareMetaInstruction(options);
-}
-
-export async function explainRuntimeOperationBridge(options: {
-  protocolId: string;
-  operationId: string;
-}): Promise<RuntimeOperationExplain> {
-  void explainMetaOperation;
-  return explainRuntimeOperation(options);
 }
 
 export async function resolveProtocolForPacks(protocolId: string): Promise<ProtocolManifest> {
