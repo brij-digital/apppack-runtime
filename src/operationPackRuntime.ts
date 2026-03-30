@@ -51,7 +51,8 @@ type RuntimeOperationSpec = {
   args?: Record<string, unknown>;
   accounts?: Record<string, unknown>;
   remaining_accounts?: unknown;
-  view?: Record<string, unknown>;
+  contract_view?: Record<string, unknown>;
+  index_view?: Record<string, unknown>;
   read_output?: {
     type: 'array' | 'object' | 'scalar';
     source: string;
@@ -93,7 +94,8 @@ export type MaterializedRuntimeOperation = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  view?: Record<string, unknown>;
+  contractView?: Record<string, unknown>;
+  indexView?: Record<string, unknown>;
   readOutput?: RuntimeOperationSpec['read_output'];
   pre?: unknown[];
   post?: unknown[];
@@ -149,7 +151,8 @@ export type RuntimeOperationExplain = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  view?: Record<string, unknown>;
+  contractView?: Record<string, unknown>;
+  indexView?: Record<string, unknown>;
   readOutput?: {
     type: 'array' | 'object' | 'scalar';
     source: string;
@@ -337,8 +340,11 @@ function mergeOperationFragment(
       target.remainingAccounts = cloned;
     }
   }
-  if (fragment.view !== undefined) {
-    target.view = cloneJsonLike(fragment.view);
+  if (fragment.contract_view !== undefined) {
+    target.contractView = cloneJsonLike(fragment.contract_view);
+  }
+  if (fragment.index_view !== undefined) {
+    target.indexView = cloneJsonLike(fragment.index_view);
   }
   if (fragment.read_output !== undefined) {
     target.readOutput = cloneJsonLike(fragment.read_output);
@@ -396,7 +402,8 @@ export function materializeRuntimeOperation(
       args: operation.args,
       accounts: operation.accounts,
       remaining_accounts: operation.remaining_accounts,
-      view: operation.view,
+      contract_view: operation.contract_view,
+      index_view: operation.index_view,
       read_output: operation.read_output,
       pre: operation.pre,
       post: operation.post,
@@ -611,7 +618,8 @@ export async function explainRuntimeOperation(options: {
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),
-    ...(materialized.view ? { view: cloneJsonLike(materialized.view) } : {}),
+    ...(materialized.contractView ? { contractView: cloneJsonLike(materialized.contractView) } : {}),
+    ...(materialized.indexView ? { indexView: cloneJsonLike(materialized.indexView) } : {}),
     ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`)
       ? { readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`) }
       : {}),
