@@ -1,9 +1,11 @@
-import { BN } from '@coral-xyz/anchor';
+import anchorPkg from '@coral-xyz/anchor';
+
+const { BN } = anchorPkg;
 import { PublicKey } from '@solana/web3.js';
 
 export function normalizeRuntimeValue(value: unknown): unknown {
   if (BN.isBN(value)) {
-    return (value as BN).toString();
+    return (value as { toString(): string }).toString();
   }
 
   if (value instanceof PublicKey) {

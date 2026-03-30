@@ -7,8 +7,9 @@ import { randomUUID } from 'node:crypto';
 import anchorPkg from '@coral-xyz/anchor';
 import { Connection, PublicKey } from '@solana/web3.js';
 import { AppPackViewReadService } from '../dist/node/view-read-service.js';
+import { DirectAccountsCoder } from '../dist/index.js';
 
-const { BN, BorshAccountsCoder } = anchorPkg;
+const { BN } = anchorPkg;
 
 const PROGRAM_ID = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
 const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
@@ -258,7 +259,7 @@ async function writeTempRuntimeWithCodama(prefix, runtimeValue, codamaValue) {
 
 test('runRead queries cached_program_accounts via binary memcmp and returns sorted selected rows', async () => {
   const metaPath = await writeTempRuntimeWithCodama('meta', META, CODAMA);
-  const coder = new BorshAccountsCoder(IDL);
+  const coder = new DirectAccountsCoder(IDL);
 
   const dataA = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
@@ -341,7 +342,7 @@ test('runRead queries cached_program_accounts via binary memcmp and returns sort
 
 test('runRead supports view v0.2 search shape with indexed_filters and decoded filters', async () => {
   const metaPath = await writeTempRuntimeWithCodama('meta-v2', META_V2, CODAMA);
-  const coder = new BorshAccountsCoder(IDL);
+  const coder = new DirectAccountsCoder(IDL);
 
   const dataA = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
@@ -415,7 +416,7 @@ test('runRead supports view v0.2 search shape with indexed_filters and decoded f
 
 test('syncFullToDatabase bootstraps cached_program_accounts for view v0.2 search', async () => {
   const metaPath = await writeTempRuntimeWithCodama('meta-bootstrap', META_V2, CODAMA);
-  const coder = new BorshAccountsCoder(IDL);
+  const coder = new DirectAccountsCoder(IDL);
   const data = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
     token_mint_b: new PublicKey(MINT_SOL),

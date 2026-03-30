@@ -14,8 +14,9 @@ import {
   type ProtocolManifest,
 } from './idlRegistry.js';
 import { loadProtocolAnchorIdlFromCodama } from './codamaAnchor.js';
+import { DirectAccountsCoder } from './directAccountsCoder.js';
 
-const { BN, BorshAccountsCoder, BorshInstructionCoder } = anchorPkg;
+const { BN, BorshInstructionCoder } = anchorPkg;
 
 type IdlInstructionAccount = {
   name: string;
@@ -586,7 +587,7 @@ export async function decodeIdlAccount(options: {
     throw new Error(`Account ${options.address} not found on-chain.`);
   }
 
-  const coder = new BorshAccountsCoder(idl);
+  const coder = new DirectAccountsCoder(idl as never);
   const decoded = coder.decode(resolvedAccount.name, accountInfo.data);
 
   return {

@@ -1,8 +1,10 @@
-import { BN, BorshAccountsCoder, utils } from '@coral-xyz/anchor';
+import anchorPkg from '@coral-xyz/anchor';
 import type { Idl } from '@coral-xyz/anchor';
 import { PublicKey, type Connection, type Commitment, type GetProgramAccountsFilter } from '@solana/web3.js';
 import { Buffer } from 'buffer';
+import bs58 from 'bs58';
 import { resolveAppUrl } from './appUrl.js';
+import { DirectAccountsCoder } from './directAccountsCoder.js';
 
 export type DiscoverStepResolved = {
   name: string;
@@ -168,7 +170,7 @@ function resolveOptionalGlobalPathValue(value: unknown, scope: Record<string, un
 
 function normalizeRuntimeValue(value: unknown): unknown {
   if (BN.isBN(value)) {
-    return (value as BN).toString();
+    return (value as { toString(): string }).toString();
   }
 
   if (typeof value === 'bigint') {
@@ -403,7 +405,7 @@ function idlDiscriminatorFilter(idl: Idl, accountType: string, label: string): G
   }
 
   const discriminatorBytes = Uint8Array.from(idlAccount.discriminator);
-  const discriminatorBase58 = utils.bytes.bs58.encode(discriminatorBytes);
+  const discriminatorBase58 = bs58.encode(discriminatorBytes);
   return {
     memcmp: {
       offset: 0,
@@ -710,7 +712,7 @@ async function runDiscoverQuery(step: DiscoverStepResolved, ctx: DiscoverRuntime
     }
   }
 
-  const coder = accountType ? new BorshAccountsCoder(ctx.idl) : null;
+  const coder = accountType ? new DirectAccountsCoder(ctx.idl as never) : null;
   const rows: Array<{
     scope: Record<string, unknown>;
     output: unknown;
@@ -801,3 +803,4 @@ export async function runRegisteredDiscoverStep(step: DiscoverStepResolved, ctx:
 
   return executor(step, ctx);
 }
+const { BN } = anchorPkg;

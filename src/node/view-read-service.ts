@@ -1,9 +1,9 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
 import { Connection, PublicKey, type Commitment, type GetProgramAccountsFilter } from '@solana/web3.js';
 import { compileCodamaToAnchorIdl } from '../codamaAnchor.js';
+import { DirectAccountsCoder, type DirectAccountIdl } from '../directAccountsCoder.js';
 import { Pool } from 'pg';
 
 type SortDirection = 'asc' | 'desc';
@@ -255,7 +255,7 @@ function parseOperationPack(runtimePath: string): MetaPack {
   return JSON.parse(fs.readFileSync(runtimePath, 'utf8')) as MetaPack;
 }
 
-function parseRuntimeCodamaIdl(runtimePath: string, protocolId: string): Idl {
+function parseRuntimeCodamaIdl(runtimePath: string, protocolId: string): DirectAccountIdl {
   const runtime = parseOperationPack(runtimePath);
   const artifactEntries = Object.entries(runtime.decoderArtifacts ?? {});
   if (artifactEntries.length === 0) {
@@ -271,7 +271,7 @@ function parseRuntimeCodamaIdl(runtimePath: string, protocolId: string): Idl {
   }
   const codamaFilePath = path.join(path.dirname(runtimePath), codamaPath.slice('/idl/'.length));
   const codama = JSON.parse(fs.readFileSync(codamaFilePath, 'utf8'));
-  return compileCodamaToAnchorIdl(codama);
+  return compileCodamaToAnchorIdl(codama) as unknown as DirectAccountIdl;
 }
 
 function parsePublicKey(value: string, name: string): PublicKey {
@@ -597,7 +597,7 @@ function normalizeIndexedFilterGroups(spec: ViewFilterGroup | undefined | null):
   return groups;
 }
 
-function compileOperation(meta: MetaPack, coder: BorshAccountsCoder, options: AppPackViewReadServiceOptions): CompiledOperation {
+function compileOperation(meta: MetaPack, coder: DirectAccountsCoder, options: AppPackViewReadServiceOptions): CompiledOperation {
   const operation = meta.operations?.[options.operationId];
   if (!operation) {
     throw new Error(`Operation ${options.operationId} not found in the app operation pack.`);
@@ -725,7 +725,7 @@ export class AppPackViewReadService {
   private readonly connection: Connection;
   private readonly cacheTtlMs: number;
   private readonly pool: Pool | null;
-  private readonly coder: BorshAccountsCoder;
+  private readonly coder: DirectAccountsCoder;
   private readonly compiled: CompiledOperation;
   private readonly cache = new Map<string, CacheEntry>();
 
@@ -746,7 +746,7 @@ export class AppPackViewReadService {
     const runtimePath = options.runtimePath;
     const meta = parseOperationPack(path.resolve(runtimePath));
     const idl = parseRuntimeCodamaIdl(path.resolve(runtimePath), options.protocolId);
-    this.coder = new BorshAccountsCoder(idl);
+    this.coder = new DirectAccountsCoder(idl);
     this.compiled = compileOperation(meta, this.coder, options);
   }
 

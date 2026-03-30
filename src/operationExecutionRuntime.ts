@@ -8,6 +8,7 @@ import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
 import { runRegisteredComputeStep } from './metaComputeRegistry.js';
 import { runRegisteredDiscoverStep } from './metaDiscoverRegistry.js';
 import { loadProtocolAnchorIdlFromCodama } from './codamaAnchor.js';
+import { DirectAccountsCoder } from './directAccountsCoder.js';
 import {
   type MaterializedRuntimeOperation,
   type RuntimeOperationExplain,
@@ -18,7 +19,7 @@ import {
 } from './operationPackRuntime.js';
 import { resolveAppUrl } from './appUrl.js';
 
-const { BN, BorshAccountsCoder } = anchorPkg;
+const { BN } = anchorPkg;
 
 const DEFAULT_SPL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
@@ -515,7 +516,7 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
     if (!info) {
       throw new Error(`Account not found for decode_account ${step.name}: ${address.toBase58()}`);
     }
-    const coder = new BorshAccountsCoder(ctx.idl);
+    const coder = new DirectAccountsCoder(ctx.idl as never);
     return normalizeRuntimeValue(coder.decode(accountType, info.data));
   }
   if (step.resolver === 'account_owner') {
