@@ -201,9 +201,26 @@ async function writeTempJson(prefix, value) {
   return file;
 }
 
+function createCodecPlan(protocolId, idl) {
+  return {
+    schema: 'apppack-runtime-codec-plan.v1',
+    version: '0.1.0',
+    protocols: [
+      {
+        protocolId,
+        artifacts: {
+          default: {
+            anchorIdl: idl,
+          },
+        },
+      },
+    ],
+  };
+}
+
 test('runRead queries cached_program_accounts via binary memcmp and returns sorted selected rows', async () => {
-  const idlPath = await writeTempJson('idl', IDL);
   const metaPath = await writeTempJson('meta', META);
+  const codecPlanPath = await writeTempJson('codec-plan', createCodecPlan('orca-whirlpool-mainnet', IDL));
   const coder = new BorshAccountsCoder(IDL);
 
   const dataA = await coder.encode('Whirlpool', {
@@ -250,8 +267,9 @@ test('runRead queries cached_program_accounts via binary memcmp and returns sort
     databaseUrl: null,
     poolOverride: pool,
     cacheTtlMs: 1000,
+    protocolId: 'orca-whirlpool-mainnet',
     runtimePath: metaPath,
-    codecIdlPath: idlPath,
+    codecPlanPath,
     programId: PROGRAM_ID,
     operationId: 'list_pools',
   });
@@ -286,8 +304,8 @@ test('runRead queries cached_program_accounts via binary memcmp and returns sort
 });
 
 test('runRead supports view v0.2 search shape with indexed_filters and decoded filters', async () => {
-  const idlPath = await writeTempJson('idl-v2', IDL);
   const metaPath = await writeTempJson('meta-v2', META_V2);
+  const codecPlanPath = await writeTempJson('codec-plan-v2', createCodecPlan('orca-whirlpool-mainnet', IDL));
   const coder = new BorshAccountsCoder(IDL);
 
   const dataA = await coder.encode('Whirlpool', {
@@ -334,8 +352,9 @@ test('runRead supports view v0.2 search shape with indexed_filters and decoded f
     databaseUrl: null,
     poolOverride: pool,
     cacheTtlMs: 1000,
+    protocolId: 'orca-whirlpool-mainnet',
     runtimePath: metaPath,
-    codecIdlPath: idlPath,
+    codecPlanPath,
     programId: PROGRAM_ID,
     operationId: 'list_pools',
   });
@@ -361,8 +380,8 @@ test('runRead supports view v0.2 search shape with indexed_filters and decoded f
 });
 
 test('syncFullToDatabase bootstraps cached_program_accounts for view v0.2 search', async () => {
-  const idlPath = await writeTempJson('idl-bootstrap', IDL);
   const metaPath = await writeTempJson('meta-bootstrap', META_V2);
+  const codecPlanPath = await writeTempJson('codec-plan-bootstrap', createCodecPlan('orca-whirlpool-mainnet', IDL));
   const coder = new BorshAccountsCoder(IDL);
   const data = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
@@ -405,8 +424,9 @@ test('syncFullToDatabase bootstraps cached_program_accounts for view v0.2 search
     databaseUrl: null,
     poolOverride: pool,
     cacheTtlMs: 1000,
+    protocolId: 'orca-whirlpool-mainnet',
     runtimePath: metaPath,
-    codecIdlPath: idlPath,
+    codecPlanPath,
     programId: PROGRAM_ID,
     operationId: 'list_pools',
   });

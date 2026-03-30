@@ -194,9 +194,17 @@ type AppPackViewReadServiceOptions = {
   poolOverride?: Pool | null;
   cacheTtlMs: number;
   runtimePath: string;
-  codecIdlPath?: string;
+  codecPlanPath?: string;
   programId: string;
+  protocolId: string;
   operationId: string;
+};
+
+type RuntimeCodecPlanDocument = {
+  protocols?: Array<{
+    protocolId?: string;
+    artifacts?: Record<string, { anchorIdl?: Idl }>;
+  }>;
 };
 
 type DecodedAccountContext = {
@@ -249,8 +257,24 @@ function parseOperationPack(runtimePath: string): MetaPack {
   return JSON.parse(fs.readFileSync(runtimePath, 'utf8')) as MetaPack;
 }
 
-function parseIdl(idlPath: string): Idl {
-  return JSON.parse(fs.readFileSync(idlPath, 'utf8')) as Idl;
+function parseCodecPlanIdl(codecPlanPath: string, protocolId: string): Idl {
+  const parsed = JSON.parse(fs.readFileSync(codecPlanPath, 'utf8')) as RuntimeCodecPlanDocument;
+  const protocol = parsed.protocols?.find((entry) => entry.protocolId === protocolId);
+  if (!protocol) {
+    throw new Error(`runtime-codec-plan is missing protocol ${protocolId}.`);
+  }
+  const artifactEntries = Object.entries(protocol.artifacts ?? {});
+  if (artifactEntries.length === 0) {
+    throw new Error(`runtime-codec-plan protocol ${protocolId} has no artifacts.`);
+  }
+  if (artifactEntries.length > 1) {
+    throw new Error(`runtime-codec-plan protocol ${protocolId} has multiple artifacts; view-read-service requires a single codec artifact.`);
+  }
+  const idl = artifactEntries[0]?.[1]?.anchorIdl;
+  if (!idl) {
+    throw new Error(`runtime-codec-plan protocol ${protocolId} is missing anchorIdl.`);
+  }
+  return idl;
 }
 
 function parsePublicKey(value: string, name: string): PublicKey {
@@ -723,13 +747,13 @@ export class AppPackViewReadService {
     }
 
     const runtimePath = options.runtimePath;
-    const codecIdlPath = options.codecIdlPath;
-    if (!codecIdlPath) {
-      throw new Error('AppPackViewReadService requires codecIdlPath.');
+    const codecPlanPath = options.codecPlanPath;
+    if (!codecPlanPath) {
+      throw new Error('AppPackViewReadService requires codecPlanPath.');
     }
 
     const meta = parseOperationPack(path.resolve(runtimePath));
-    const idl = parseIdl(path.resolve(codecIdlPath));
+    const idl = parseCodecPlanIdl(path.resolve(codecPlanPath), options.protocolId);
     this.coder = new BorshAccountsCoder(idl);
     this.compiled = compileOperation(meta, this.coder, options);
   }

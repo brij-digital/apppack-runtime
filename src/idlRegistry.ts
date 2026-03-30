@@ -5,7 +5,6 @@ export type ProtocolManifest = {
   name: string;
   network: string;
   programId: string;
-  idlPath?: string;
   codamaIdlPath?: string;
   runtimeSpecPath?: string;
   transport: string;
@@ -20,8 +19,7 @@ type RegistryShape = {
 };
 
 type RuntimeDecoderArtifact = {
-  idlPath?: string;
-  codecIdlPath?: string;
+  codamaPath?: string;
 };
 
 type RuntimeSpecShape = {
@@ -32,7 +30,6 @@ type RuntimeSpecShape = {
 
 let registryCache: RegistryShape | null = null;
 const runtimeSpecCache = new Map<string, RuntimeSpecShape | null>();
-const codecIdlPathCache = new Map<string, string>();
 
 export async function loadRegistry(): Promise<RegistryShape> {
   if (registryCache) {
@@ -92,35 +89,4 @@ export async function loadProtocolRuntimeSpec(protocolId: string): Promise<Runti
 
   runtimeSpecCache.set(protocolId, parsed);
   return parsed;
-}
-
-export async function resolveProtocolCodecIdlPath(protocolId: string): Promise<string> {
-  if (codecIdlPathCache.has(protocolId)) {
-    return codecIdlPathCache.get(protocolId)!;
-  }
-
-  const runtimeSpec = await loadProtocolRuntimeSpec(protocolId);
-  const runtimeCodecPaths = new Set<string>();
-
-  for (const artifact of Object.values(runtimeSpec?.decoderArtifacts ?? {})) {
-    if (typeof artifact.codecIdlPath === 'string' && artifact.codecIdlPath.length > 0) {
-      runtimeCodecPaths.add(artifact.codecIdlPath);
-    }
-  }
-
-  if (runtimeSpec) {
-    if (runtimeCodecPaths.size === 0) {
-      throw new Error(
-        `Protocol ${protocolId} has a runtime spec but no codec IDL path in decoderArtifacts; migrated execution must resolve codecs from runtime spec.`,
-      );
-    }
-    if (runtimeCodecPaths.size > 1) {
-      throw new Error(`Protocol ${protocolId} declares multiple codec IDL paths in runtime spec; resolve the ambiguity before execution.`);
-    }
-    const resolved = Array.from(runtimeCodecPaths)[0]!;
-    codecIdlPathCache.set(protocolId, resolved);
-    return resolved;
-  }
-
-  throw new Error(`Protocol ${protocolId} has no runtime-backed codec IDL path; active execution requires runtimeSpec.decoderArtifacts.*.codecIdlPath.`);
 }

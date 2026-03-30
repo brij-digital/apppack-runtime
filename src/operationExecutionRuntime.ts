@@ -3,11 +3,11 @@ import { getAssociatedTokenAddressSync } from '@solana/spl-token';
 import type { Idl } from '@coral-xyz/anchor';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
-import { resolveProtocolCodecIdlPath, getProtocolById } from './idlRegistry.js';
+import { getProtocolById } from './idlRegistry.js';
 import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
 import { runRegisteredComputeStep } from './metaComputeRegistry.js';
 import { runRegisteredDiscoverStep } from './metaDiscoverRegistry.js';
-import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
+import { loadProtocolCodecIdl } from './runtimeCodecPlan.js';
 import {
   type MaterializedRuntimeOperation,
   type RuntimeOperationExplain,
@@ -151,7 +151,6 @@ type ResolverContext = {
     name: string;
     network: string;
     programId: string;
-    codecIdlPath: string | null;
   };
   runtime: RuntimePack;
   input: Record<string, unknown>;
@@ -347,12 +346,7 @@ async function loadProtocolIdl(protocolId: string): Promise<Idl> {
   if (cached) {
     return cached;
   }
-  const codecIdlPath = await resolveProtocolCodecIdlPath(protocolId);
-  const response = await fetch(resolveAppUrl(codecIdlPath));
-  if (!response.ok) {
-    throw new Error(`Failed to load codec IDL from ${codecIdlPath}`);
-  }
-  const parsed = normalizeIdlForAnchorCoder((await response.json()) as Idl);
+  const parsed = await loadProtocolCodecIdl(protocolId);
   idlCache.set(protocolId, parsed);
   return parsed;
 }
@@ -637,7 +631,6 @@ export async function prepareRuntimeOperation(options: {
   walletPublicKey: PublicKey;
 }): Promise<PreparedMetaOperation> {
   const protocol = await getProtocolById(options.protocolId);
-  const codecIdlPath = await resolveProtocolCodecIdlPath(options.protocolId);
   const runtime = await loadRuntimePack(options.protocolId);
   const idl = await loadProtocolIdl(options.protocolId);
   const operationSpec = runtime.operations?.[options.operationId];
@@ -666,7 +659,6 @@ export async function prepareRuntimeOperation(options: {
       name: protocol.name,
       network: protocol.network,
       programId: protocol.programId,
-      codecIdlPath,
     },
     runtime,
   };

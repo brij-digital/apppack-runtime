@@ -36,7 +36,9 @@ async function assertFile(filePath) {
 async function main() {
   const { packDir } = parseArgs();
   const registryPath = path.join(packDir, 'registry.json');
+  const codecPlanPath = path.join(packDir, 'runtime-codec-plan.json');
   await assertFile(registryPath);
+  await assertFile(codecPlanPath);
 
   const registry = await loadJson(registryPath);
   if (!registry || typeof registry !== 'object' || !Array.isArray(registry.protocols)) {
@@ -84,10 +86,9 @@ async function main() {
               fail(`${codamaPath} is not a Codama IDL.`);
             }
           }
-          if (typeof artifact.codecIdlPath !== 'string' || !artifact.codecIdlPath.startsWith('/idl/')) {
-            fail(`${filePath}.decoderArtifacts.${artifactName} must declare codecIdlPath.`);
+          if (artifact.codecIdlPath != null) {
+            fail(`${filePath}.decoderArtifacts.${artifactName} must not declare legacy codecIdlPath.`);
           }
-          await assertFile(path.join(packDir, artifact.codecIdlPath.slice('/idl/'.length)));
           if (artifact.idlPath != null) {
             fail(`${filePath}.decoderArtifacts.${artifactName} must not declare legacy idlPath.`);
           }
@@ -100,9 +101,6 @@ async function main() {
       }
     }
 
-    if (protocol.runtimeSpecPath != null && protocol.idlPath != null) {
-      fail(`Protocol ${protocol.id} still declares registry idlPath alongside runtimeSpecPath; migrated pack contracts must source codec IDL from runtime decoderArtifacts only.`);
-    }
     if (isActive && protocol.runtimeSpecPath == null) {
       fail(`Protocol ${protocol.id} is active but has no runtimeSpecPath; active pack contracts must be runtime-backed.`);
     }

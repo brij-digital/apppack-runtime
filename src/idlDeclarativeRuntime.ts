@@ -11,11 +11,9 @@ import {
 import {
   getProtocolById,
   loadRegistry,
-  resolveProtocolCodecIdlPath,
   type ProtocolManifest,
 } from './idlRegistry.js';
-import { normalizeIdlForAnchorCoder } from './normalizeIdl.js';
-import { resolveAppUrl } from './appUrl.js';
+import { loadProtocolCodecIdl } from './runtimeCodecPlan.js';
 
 const { BN, BorshAccountsCoder, BorshInstructionCoder } = anchorPkg;
 
@@ -324,13 +322,7 @@ async function loadProtocolAndIdl(protocolId: string): Promise<{ protocol: Proto
     };
   }
 
-  const codecIdlPath = await resolveProtocolCodecIdlPath(protocolId);
-  const response = await fetch(resolveAppUrl(codecIdlPath));
-  if (!response.ok) {
-    throw new Error(`Failed to load codec IDL file ${codecIdlPath}`);
-  }
-
-  const parsed = normalizeIdlForAnchorCoder((await response.json()) as Idl);
+  const parsed = await loadProtocolCodecIdl(protocolId);
   idlCache.set(protocol.id, parsed);
 
   return {
@@ -513,8 +505,6 @@ export async function listIdlProtocols(): Promise<{
       name: string;
       network: string;
       programId: string;
-      idlPath: string | null;
-      codecIdlPath: string | null;
       codamaIdlPath: string | null;
       runtimeSpecPath: string | null;
       supportedCommands: string[];
@@ -522,16 +512,6 @@ export async function listIdlProtocols(): Promise<{
     }>;
 }> {
   const registry = await loadRegistry();
-  const codecPathByProtocol = new Map<string, string | null>();
-  await Promise.all(
-    registry.protocols.map(async (protocol) => {
-      try {
-        codecPathByProtocol.set(protocol.id, await resolveProtocolCodecIdlPath(protocol.id));
-      } catch {
-        codecPathByProtocol.set(protocol.id, null);
-      }
-    }),
-  );
   return {
     version: typeof registry.version === 'string' ? registry.version : null,
     globalCommands: Array.isArray(registry.globalCommands)
@@ -542,8 +522,6 @@ export async function listIdlProtocols(): Promise<{
       name: protocol.name,
       network: protocol.network,
       programId: protocol.programId,
-      idlPath: protocol.idlPath ?? null,
-      codecIdlPath: codecPathByProtocol.get(protocol.id) ?? null,
       codamaIdlPath: protocol.codamaIdlPath ?? null,
       runtimeSpecPath: protocol.runtimeSpecPath ?? null,
       supportedCommands: protocol.supportedCommands ?? [],

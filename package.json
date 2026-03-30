@@ -1,6 +1,6 @@
 {
   "name": "@brij-digital/apppack-runtime",
-  "version": "0.1.25",
+  "version": "0.1.26",
   "type": "module",
   "repository": {
     "type": "git",
@@ -37,7 +37,7 @@
     "./schemas/*": "./schemas/*"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "rm -rf dist && tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "schemas:check": "node scripts/check-shared-schemas.mjs",
     "test": "npm run build && node --test test/**/*.test.mjs",
