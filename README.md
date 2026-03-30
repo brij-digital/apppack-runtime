@@ -9,8 +9,6 @@ Used by:
 ## Shared Schemas
 
 `schemas/` is the source of truth for shared AppPack schema files:
-- `meta_view.schema.v0.2.json`
-- `meta_view.schema.v0.3.json`
 - `declarative_decoder_runtime.schema.v1.json`
 
 Downstream repos should sync these files from runtime and treat local copies as generated artifacts.
