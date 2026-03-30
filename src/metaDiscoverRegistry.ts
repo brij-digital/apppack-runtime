@@ -367,16 +367,6 @@ function decodeBase64ToBytes(base64: string): Buffer {
   return Buffer.from(base64, 'base64');
 }
 
-function isTooManyAccountsError(error: unknown): boolean {
-  const message = String((error as { message?: unknown })?.message ?? error ?? '');
-  return message.includes('Too many accounts requested');
-}
-
-function isMethodNotFoundError(error: unknown): boolean {
-  const message = String((error as { message?: unknown })?.message ?? error ?? '');
-  return message.includes('-32601') || /method not found/i.test(message);
-}
-
 function asProgramAccountLike(entry: unknown, label: string): ProgramAccountLike {
   const record = asRecord(entry, `${label}`);
   const pubkey = asPubkey(record.pubkey, `${label}.pubkey`);
@@ -404,88 +394,6 @@ function asProgramAccountLike(entry: unknown, label: string): ProgramAccountLike
       owner,
     },
   };
-}
-
-async function fetchProgramAccountsViaV2(options: {
-  endpoint: string;
-  programId: PublicKey;
-  commitment: Commitment;
-  filters: GetProgramAccountsFilter[];
-  maxAccounts?: number;
-}): Promise<ProgramAccountLike[]> {
-  const output: ProgramAccountLike[] = [];
-  const maxAccounts = options.maxAccounts ?? 25_000;
-  const pageLimit = Math.min(1000, Math.max(1, maxAccounts));
-  const maxPages = Math.max(1, Math.ceil(maxAccounts / pageLimit));
-  let paginationKey: string | null = null;
-
-  for (let page = 0; page < maxPages; page += 1) {
-    const response = await fetch(options.endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: `gpa-v2-${page + 1}`,
-        method: 'getProgramAccountsV2',
-        params: [
-          options.programId.toBase58(),
-          {
-            encoding: 'base64',
-            commitment: options.commitment,
-            filters: options.filters,
-            limit: pageLimit,
-            ...(paginationKey ? { paginationKey } : {}),
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`getProgramAccountsV2 failed: ${response.status} ${response.statusText}`);
-    }
-
-    const body = (await response.json()) as {
-      error?: { message?: string; code?: number };
-      result?: unknown;
-    };
-    if (body.error) {
-      throw new Error(body.error.message ?? 'getProgramAccountsV2 returned error.');
-    }
-
-    const resultObject =
-      body.result && typeof body.result === 'object' && !Array.isArray(body.result)
-        ? (body.result as Record<string, unknown>)
-        : null;
-    const resultCount = resultObject?.count === undefined ? null : asNumberLike(resultObject.count, 'getProgramAccountsV2.result.count');
-    const accountsRaw = Array.isArray(body.result)
-      ? body.result
-      : Array.isArray(resultObject?.accounts)
-        ? (resultObject?.accounts as unknown[])
-        : Array.isArray(resultObject?.value)
-          ? (resultObject?.value as unknown[])
-          : [];
-    const accounts = accountsRaw.map((entry, index) =>
-      asProgramAccountLike(entry, `getProgramAccountsV2.accounts[${index}]`),
-    );
-    if (accounts.length === 0 || resultCount === 0) {
-      break;
-    }
-    output.push(...accounts);
-
-    if (output.length >= maxAccounts) {
-      break;
-    }
-
-    paginationKey =
-      (typeof resultObject?.paginationKey === 'string' ? resultObject.paginationKey : null) ??
-      (typeof resultObject?.nextPage === 'string' ? resultObject.nextPage : null) ??
-      null;
-    if (!paginationKey) {
-      break;
-    }
-  }
-
-  return output;
 }
 
 function idlDiscriminatorFilter(idl: Idl, accountType: string, label: string): GetProgramAccountsFilter {
@@ -792,55 +700,12 @@ async function runDiscoverQuery(step: DiscoverStepResolved, ctx: DiscoverRuntime
     });
   } else {
     for (const filters of finalFilterGroups) {
-      try {
-        const accountsV2 = await fetchProgramAccountsViaV2({
-          endpoint: ctx.connection.rpcEndpoint,
-          programId,
-          commitment,
-          filters,
-          maxAccounts:
-            requestedLimit === null
-              ? 25_000
-              : Math.max(10, Math.min(2_000, requestedLimit * 10)),
-        });
-        for (const account of accountsV2) {
-          accountMap.set(account.pubkey.toBase58(), account);
-        }
-      } catch (error) {
-        if (!isMethodNotFoundError(error)) {
-          try {
-            const accounts = await ctx.connection.getProgramAccounts(programId, {
-              commitment,
-              filters: filters.length > 0 ? filters : undefined,
-            });
-            for (const account of accounts) {
-              accountMap.set(account.pubkey.toBase58(), account);
-            }
-            continue;
-          } catch (legacyError) {
-            if (!isTooManyAccountsError(legacyError)) {
-              throw legacyError;
-            }
-
-            if (filters.length === 0) {
-              throw new Error(
-                `discover:${step.name}: program account query too large and no filters provided.`,
-              );
-            }
-
-            throw new Error(
-              `discover:${step.name}: RPC requires getProgramAccountsV2 pagination and legacy getProgramAccounts is too large.`,
-            );
-          }
-        }
-        // If V2 itself is not supported, fallback to legacy getProgramAccounts.
-        const accounts = await ctx.connection.getProgramAccounts(programId, {
-          commitment,
-          filters: filters.length > 0 ? filters : undefined,
-        });
-        for (const account of accounts) {
-          accountMap.set(account.pubkey.toBase58(), account);
-        }
+      const accounts = await ctx.connection.getProgramAccounts(programId, {
+        commitment,
+        filters: filters.length > 0 ? filters : undefined,
+      });
+      for (const account of accounts) {
+        accountMap.set(account.pubkey.toBase58(), account);
       }
     }
   }
