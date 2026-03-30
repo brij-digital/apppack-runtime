@@ -56,6 +56,9 @@ export async function getProtocolById(protocolId: string): Promise<ProtocolManif
   if (!manifest) {
     throw new Error(`Protocol ${protocolId} not found in local IDL registry.`);
   }
+  if (manifest.status === 'inactive') {
+    throw new Error(`Protocol ${protocolId} is inactive in the local IDL registry.`);
+  }
 
   return manifest;
 }
@@ -96,7 +99,6 @@ export async function resolveProtocolCodecIdlPath(protocolId: string): Promise<s
     return codecIdlPathCache.get(protocolId)!;
   }
 
-  const manifest = await getProtocolById(protocolId);
   const runtimeSpec = await loadProtocolRuntimeSpec(protocolId);
   const runtimeCodecPaths = new Set<string>();
 
@@ -120,11 +122,5 @@ export async function resolveProtocolCodecIdlPath(protocolId: string): Promise<s
     return resolved;
   }
 
-  const resolved = manifest.idlPath;
-  if (!resolved) {
-    throw new Error(`Protocol ${protocolId} has no codec IDL path; migrated execution must provide one via runtimeSpec.decoderArtifacts.*.codecIdlPath.`);
-  }
-
-  codecIdlPathCache.set(protocolId, resolved);
-  return resolved;
+  throw new Error(`Protocol ${protocolId} has no runtime-backed codec IDL path; active execution requires runtimeSpec.decoderArtifacts.*.codecIdlPath.`);
 }

@@ -50,6 +50,7 @@ async function main() {
     if (typeof protocol.id !== 'string' || protocol.id.trim().length === 0) {
       fail('Registry protocol entry is missing id.');
     }
+    const isActive = protocol.status !== 'inactive';
     for (const key of ['idlPath', 'codamaIdlPath', 'runtimeSpecPath']) {
       const value = protocol[key];
       if (value == null) {
@@ -101,6 +102,12 @@ async function main() {
 
     if (protocol.runtimeSpecPath != null && protocol.idlPath != null) {
       fail(`Protocol ${protocol.id} still declares registry idlPath alongside runtimeSpecPath; migrated pack contracts must source codec IDL from runtime decoderArtifacts only.`);
+    }
+    if (isActive && protocol.runtimeSpecPath == null) {
+      fail(`Protocol ${protocol.id} is active but has no runtimeSpecPath; active pack contracts must be runtime-backed.`);
+    }
+    if (isActive && protocol.idlPath != null) {
+      fail(`Protocol ${protocol.id} is active but still declares legacy idlPath.`);
     }
 
     if (protocol.appPath != null) {
