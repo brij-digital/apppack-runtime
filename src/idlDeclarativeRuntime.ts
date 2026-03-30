@@ -1,4 +1,4 @@
-import * as anchorPkg from '@coral-xyz/anchor';
+import BN from 'bn.js';
 import type { Idl } from '@coral-xyz/anchor';
 import type { WalletContextState } from '@solana/wallet-adapter-react';
 import {
@@ -15,8 +15,8 @@ import {
 } from './idlRegistry.js';
 import { loadProtocolAnchorIdlFromCodama } from './codamaAnchor.js';
 import { DirectAccountsCoder } from './directAccountsCoder.js';
-
-const { BN, BorshInstructionCoder } = anchorPkg;
+import { DirectInstructionCoder } from './directInstructionCoder.js';
+import { isBnLike } from './bnLike.js';
 
 type IdlInstructionAccount = {
   name: string;
@@ -95,7 +95,7 @@ function toBase64(data: Uint8Array): string {
 }
 
 function serializeForUi(value: unknown): unknown {
-  if (BN.isBN(value)) {
+  if (isBnLike(value)) {
     return (value as { toString(): string }).toString();
   }
 
@@ -619,7 +619,7 @@ async function prepareSignedIdlTransaction(options: {
   const instruction = findInstructionByName(idl, options.instructionName);
 
   const args = buildInstructionArgs(idl, instruction, options.args);
-  const instructionCoder = new BorshInstructionCoder(idl);
+  const instructionCoder = new DirectInstructionCoder(idl as never);
   const encodedData = instructionCoder.encode(instruction.name, args);
   if (!encodedData) {
     throw new Error('Failed to encode instruction from IDL.');
@@ -766,7 +766,7 @@ export async function previewIdlInstruction(options: {
   const instruction = findInstructionByName(idl, options.instructionName);
 
   const args = buildInstructionArgs(idl, instruction, options.args);
-  const instructionCoder = new BorshInstructionCoder(idl);
+  const instructionCoder = new DirectInstructionCoder(idl as never);
   const encodedData = instructionCoder.encode(instruction.name, args);
   if (!encodedData) {
     throw new Error('Failed to encode instruction from IDL.');
