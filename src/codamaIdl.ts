@@ -1,11 +1,7 @@
 import { resolveAppUrl } from './appUrl.js';
-import { loadProtocolRuntimeSpec } from './idlRegistry.js';
+import { getProtocolById } from './idlRegistry.js';
 
 type JsonRecord = Record<string, unknown>;
-
-type RuntimeDecoderArtifact = {
-  codamaPath?: string;
-};
 
 export type CodamaDocument = JsonRecord;
 
@@ -330,28 +326,13 @@ async function loadJsonByPath<T>(filePath: string): Promise<T> {
   return (await codamaFetchCache.get(cacheKey)!) as T;
 }
 
-function resolveProtocolCodecArtifact(runtime: { decoderArtifacts?: Record<string, RuntimeDecoderArtifact> }, protocolId: string) {
-  const artifactEntries = Object.entries(runtime.decoderArtifacts ?? {});
-  if (artifactEntries.length === 0) {
-    throw new Error(`Protocol ${protocolId} runtime spec declares no decoder artifacts.`);
-  }
-  if (artifactEntries.length > 1) {
-    throw new Error(`Protocol ${protocolId} declares multiple decoder artifacts; runtime decode resolution is ambiguous.`);
-  }
-  return artifactEntries[0]!;
-}
-
 export async function loadProtocolCodamaFromRuntime(protocolId: string): Promise<CodamaDocument> {
   if (!protocolCodamaCache.has(protocolId)) {
     protocolCodamaCache.set(
       protocolId,
       (async () => {
-        const runtime = await loadProtocolRuntimeSpec(protocolId);
-        if (!runtime) {
-          throw new Error(`Protocol ${protocolId} has no runtime spec; active runtime decode requires runtime-backed protocols.`);
-        }
-        const [artifactName, artifact] = resolveProtocolCodecArtifact(runtime, protocolId);
-        const codamaPath = asString((artifact as RuntimeDecoderArtifact).codamaPath, `${protocolId}.decoderArtifacts.${artifactName}.codamaPath`);
+        const protocol = await getProtocolById(protocolId);
+        const codamaPath = asString(protocol.codamaIdlPath, `${protocolId}.codamaIdlPath`);
         return await loadJsonByPath<CodamaDocument>(codamaPath);
       })(),
     );

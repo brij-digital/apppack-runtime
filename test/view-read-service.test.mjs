@@ -45,73 +45,74 @@ const CODAMA = {
 };
 
 const RUNTIME = {
-  schema: 'declarative-decoder-runtime.v1',
-  protocolId: 'orca-whirlpool-mainnet',
-  decoderArtifacts: {
-    default: {
-      kind: 'generated_idl_decoder',
-      family: 'codama',
-      artifact: 'default',
-      codamaPath: '/idl/orca_whirlpool.codama.json',
-    },
+  schema: 'solana-agent-runtime.v1',
+  version: '0.1.0',
+  protocol: {
+    protocolId: 'orca-whirlpool-mainnet',
+    label: 'Orca Whirlpool Test Runtime',
+    programId: PROGRAM_ID,
+    codamaPath: '/idl/orca_whirlpool.codama.json',
   },
-  operations: {
-    list_pools: {
-      inputs: {
-        token_in_mint: { type: 'pubkey', required: true },
-        token_out_mint: { type: 'pubkey', required: true },
-        min_last_seen_slot: { type: 'u64', required: false, default: '0' },
-      },
-      read_output: {
-        type: 'array',
-        source: '$derived.items',
-        max_items: 20,
-      },
-      index_view: {
-        kind: 'search',
-        source_kind: 'account_changes',
-        entity_type: 'whirlpool_pool',
-        bootstrap: {
-          kind: 'scan_accounts',
-          source: 'rpc.getProgramAccounts',
-          program_id: '$protocol.programId',
-          account_type: 'Whirlpool',
-          filters: [],
+  reads: {
+    contract: {},
+    index: {
+      list_pools: {
+        inputs: {
+          token_in_mint: { type: 'pubkey', required: true },
+          token_out_mint: { type: 'pubkey', required: true },
+          min_last_seen_slot: { type: 'u64', required: false, default: '0' },
         },
-        query: {
-          indexed_filters: {
-            any: [
-              {
-                all: [
-                  { field: 'memcmp.8', op: '=', value: '$input.token_in_mint' },
-                  { field: 'memcmp.40', op: '=', value: '$input.token_out_mint' },
-                ],
-              },
-              {
-                all: [
-                  { field: 'memcmp.8', op: '=', value: '$input.token_out_mint' },
-                  { field: 'memcmp.40', op: '=', value: '$input.token_in_mint' },
-                ],
-              },
-            ],
-          },
-          filters: {
-            all: [
-              { field: 'account.lastSeenSlot', op: '>=', value: '$input.min_last_seen_slot' },
-              { field: 'decoded.liquidity', op: '>', value: '0' },
-            ],
-          },
-          decode: {
+        read_output: {
+          type: 'array',
+          source: '$derived.items',
+          max_items: 20,
+        },
+        read: {
+          kind: 'search',
+          source_kind: 'account_changes',
+          entity_type: 'whirlpool_pool',
+          bootstrap: {
+            kind: 'scan_accounts',
+            source: 'rpc.getProgramAccounts',
+            program_id: '$protocol.programId',
             account_type: 'Whirlpool',
+            filters: [],
           },
-          sort: [{ field: 'decoded.liquidity', dir: 'desc', mode: 'indexed_then_live_refine', candidate_limit: 20 }],
-          limit: 20,
-          select: {
-            whirlpool: '$account.pubkey',
-            tokenMintA: '$decoded.token_mint_a',
-            tokenMintB: '$decoded.token_mint_b',
-            tickSpacing: '$decoded.tick_spacing',
-            liquidity: '$decoded.liquidity',
+          query: {
+            indexed_filters: {
+              any: [
+                {
+                  all: [
+                    { field: 'memcmp.8', op: '=', value: '$input.token_in_mint' },
+                    { field: 'memcmp.40', op: '=', value: '$input.token_out_mint' },
+                  ],
+                },
+                {
+                  all: [
+                    { field: 'memcmp.8', op: '=', value: '$input.token_out_mint' },
+                    { field: 'memcmp.40', op: '=', value: '$input.token_in_mint' },
+                  ],
+                },
+              ],
+            },
+            filters: {
+              all: [
+                { field: 'account.lastSeenSlot', op: '>=', value: '$input.min_last_seen_slot' },
+                { field: 'decoded.liquidity', op: '>', value: '0' },
+              ],
+            },
+            decode: {
+              account_type: 'Whirlpool',
+            },
+            sort: [{ field: 'decoded.liquidity', dir: 'desc', mode: 'indexed_then_live_refine', candidate_limit: 20 }],
+            limit: 20,
+            select: {
+              whirlpool: '$account.pubkey',
+              tokenMintA: '$decoded.token_mint_a',
+              tokenMintB: '$decoded.token_mint_b',
+              tickSpacing: '$decoded.tick_spacing',
+              liquidity: '$decoded.liquidity',
+            },
           },
         },
       },

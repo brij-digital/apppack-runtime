@@ -55,7 +55,7 @@ async function main() {
       fail(`Protocol ${protocol.id} still declares legacy idlPath.`);
     }
 
-    for (const key of ['codamaIdlPath', 'runtimeSpecPath']) {
+    for (const key of ['codamaIdlPath', 'agentRuntimePath', 'indexingSpecPath']) {
       const value = protocol[key];
       if (value == null) {
         continue;
@@ -69,9 +69,14 @@ async function main() {
       if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
         fail(`${filePath} did not parse as a JSON object.`);
       }
-      if (key === 'runtimeSpecPath') {
+      if (key === 'agentRuntimePath') {
+        if (parsed.schema !== 'solana-agent-runtime.v1') {
+          fail(`${filePath} has invalid agent runtime schema marker.`);
+        }
+      }
+      if (key === 'indexingSpecPath') {
         if (parsed.schema !== 'declarative-decoder-runtime.v1') {
-          fail(`${filePath} has invalid declarative runtime schema marker.`);
+          fail(`${filePath} has invalid declarative indexing schema marker.`);
         }
         const runtime = asObject(parsed, `${filePath}`);
         const decoderArtifacts = asObject(runtime.decoderArtifacts, `${filePath}.decoderArtifacts`);
@@ -103,11 +108,14 @@ async function main() {
       }
     }
 
-    if (isActive && protocol.runtimeSpecPath == null) {
-      fail(`Protocol ${protocol.id} is active but has no runtimeSpecPath; active pack contracts must be runtime-backed.`);
+    if (isActive && protocol.agentRuntimePath == null) {
+      fail(`Protocol ${protocol.id} is active but has no agentRuntimePath; active pack contracts must be agent-runtime-backed.`);
+    }
+    if (isActive && protocol.indexingSpecPath == null) {
+      fail(`Protocol ${protocol.id} is active but has no indexingSpecPath; active pack contracts must be indexing-backed.`);
     }
     if (protocol.appPath != null) {
-      fail(`Protocol ${protocol.id} still declares appPath; active pack contracts are codama/runtime only.`);
+      fail(`Protocol ${protocol.id} still declares appPath; active pack contracts are codama/indexing/agent-runtime only.`);
     }
 
     for (const legacyKey of ['metaPath', 'metaCorePath']) {

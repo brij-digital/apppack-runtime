@@ -1,9 +1,8 @@
 import {
   getProtocolById,
-  loadProtocolRuntimeSpec,
+  loadProtocolAgentRuntime,
   type ProtocolManifest,
 } from './idlRegistry.js';
-import { resolveAppUrl } from './appUrl.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -30,7 +29,6 @@ type RuntimeInputSpec = {
   required?: boolean;
   default?: unknown;
   bind_from?: string;
-  read_from?: string;
   validate?: {
     required?: boolean;
     min?: string | number;
@@ -42,7 +40,52 @@ type RuntimeInputSpec = {
   ui_example?: unknown;
 };
 
-type RuntimeOperationSpec = {
+type ReadOutputSpec = {
+  type: 'array' | 'object' | 'scalar' | 'list';
+  source: string;
+  title?: string;
+  empty_text?: string;
+  emptyText?: string;
+  max_items?: number;
+  maxItems?: number;
+  item_label_fields?: string[];
+  itemLabelFields?: string[];
+};
+
+type AgentContractReadSpec = {
+  inputs?: Record<string, RuntimeInputSpec>;
+  validate?: {
+    cross?: Array<{
+      kind?: string;
+      left?: string;
+      right?: string;
+      message?: string;
+    }>;
+  };
+  read_output?: ReadOutputSpec;
+  read: Record<string, unknown>;
+};
+
+type AgentIndexReadSpec = AgentContractReadSpec;
+
+type AgentComputeSpec = {
+  inputs?: Record<string, RuntimeInputSpec>;
+  discover?: unknown[];
+  derive?: unknown[];
+  compute?: unknown[];
+  use?: TemplateUseSpec[];
+  read_output?: ReadOutputSpec;
+  validate?: {
+    cross?: Array<{
+      kind?: string;
+      left?: string;
+      right?: string;
+      message?: string;
+    }>;
+  };
+};
+
+type AgentExecutionSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
   discover?: unknown[];
@@ -51,19 +94,10 @@ type RuntimeOperationSpec = {
   args?: Record<string, unknown>;
   accounts?: Record<string, unknown>;
   remaining_accounts?: unknown;
-  contract_view?: Record<string, unknown>;
-  index_view?: Record<string, unknown>;
-  read_output?: {
-    type: 'array' | 'object' | 'scalar';
-    source: string;
-    title?: string;
-    empty_text?: string;
-    max_items?: number;
-    item_label_fields?: string[];
-  };
   pre?: unknown[];
   post?: unknown[];
   use?: TemplateUseSpec[];
+  read_output?: ReadOutputSpec;
   validate?: {
     cross?: Array<{
       kind?: string;
@@ -75,17 +109,31 @@ type RuntimeOperationSpec = {
 };
 
 export type RuntimePack = {
-  schema: 'declarative-decoder-runtime.v1';
+  schema: 'solana-agent-runtime.v1';
   version: string;
-  protocolId: string;
-  label?: string;
+  protocol: {
+    protocolId: string;
+    label?: string;
+    programId: string;
+    codamaPath: string;
+  };
+  navigation?: Record<string, unknown>;
   sources?: Record<string, unknown>;
+  reads?: {
+    contract?: Record<string, AgentContractReadSpec>;
+    index?: Record<string, AgentIndexReadSpec>;
+  };
+  computes?: Record<string, AgentComputeSpec>;
+  executions?: Record<string, AgentExecutionSpec>;
   templates?: Record<string, TemplateSpec>;
-  operations?: Record<string, RuntimeOperationSpec>;
 };
 
+type OperationKind = 'contract_read' | 'index_read' | 'compute' | 'execution';
+
+type RawOperationSpec = AgentContractReadSpec | AgentIndexReadSpec | AgentComputeSpec | AgentExecutionSpec;
 
 export type MaterializedRuntimeOperation = {
+  kind: OperationKind;
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
   discover: unknown[];
@@ -94,9 +142,8 @@ export type MaterializedRuntimeOperation = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  contractView?: Record<string, unknown>;
-  indexView?: Record<string, unknown>;
-  readOutput?: RuntimeOperationSpec['read_output'];
+  readSpec?: Record<string, unknown>;
+  readOutput?: ReadOutputSpec;
   pre?: unknown[];
   post?: unknown[];
 };
@@ -118,8 +165,9 @@ export type RuntimeOperationInputSummary = {
 
 export type RuntimeOperationSummary = {
   operationId: string;
+  operationKind: OperationKind;
   instruction: string;
-  executionKind: 'read' | 'write';
+  executionKind: 'read' | 'compute' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
   crossValidation?: Array<{
     kind: 'not_equal';
@@ -128,7 +176,7 @@ export type RuntimeOperationSummary = {
     message?: string;
   }>;
   readOutput?: {
-    type: 'array' | 'object' | 'scalar';
+    type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     title?: string;
     emptyText?: string;
@@ -140,6 +188,7 @@ export type RuntimeOperationSummary = {
 export type RuntimeOperationExplain = {
   protocolId: string;
   operationId: string;
+  operationKind: OperationKind;
   schema: string | null;
   version: string;
   instruction: string;
@@ -151,10 +200,9 @@ export type RuntimeOperationExplain = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  contractView?: Record<string, unknown>;
-  indexView?: Record<string, unknown>;
+  readSpec?: Record<string, unknown>;
   readOutput?: {
-    type: 'array' | 'object' | 'scalar';
+    type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     title?: string;
     emptyText?: string;
@@ -165,26 +213,7 @@ export type RuntimeOperationExplain = {
   post: unknown[];
 };
 
-
 const runtimePackCache = new Map<string, RuntimePack>();
-
-function asRecord(value: unknown, label: string): JsonRecord {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`${label} must be an object.`);
-  }
-  return value as JsonRecord;
-}
-
-function asString(value: unknown, label: string): string {
-  if (typeof value !== 'string' || value.trim().length === 0) {
-    throw new Error(`${label} must be a non-empty string.`);
-  }
-  return value.trim();
-}
-
-function asOptionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim().length > 0 ? value.trim() : undefined;
-}
 
 function cloneJsonLike<T>(value: T): T {
   if (value === undefined) {
@@ -193,30 +222,23 @@ function cloneJsonLike<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
 }
 
-async function loadJsonByPath<T>(filePath: string): Promise<T> {
-  const response = await fetch(resolveAppUrl(filePath));
-  if (!response.ok) {
-    throw new Error(`Failed to load JSON from ${filePath}.`);
+function resolveTemplateExpansionValue(value: unknown, paramScope: JsonRecord): unknown {
+  if (typeof value === 'string' && value.startsWith('$param.')) {
+    return resolvePath(paramScope, value);
   }
-  return (await response.json()) as T;
+  if (Array.isArray(value)) {
+    return value.map((item) => resolveTemplateExpansionValue(item, paramScope));
+  }
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as JsonRecord).map(([key, nested]) => [
+        key,
+        resolveTemplateExpansionValue(nested, paramScope),
+      ]),
+    );
+  }
+  return value;
 }
-
-export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> {
-  const cached = runtimePackCache.get(protocolId);
-  if (cached) {
-    return cached;
-  }
-
-  const runtimeSpec = await loadProtocolRuntimeSpec(protocolId);
-  if (!runtimeSpec) {
-    throw new Error(`Protocol ${protocolId} has no runtimeSpecPath.`);
-  }
-
-  const parsed = (runtimeSpec as unknown as RuntimePack);
-  runtimePackCache.set(protocolId, parsed);
-  return parsed;
-}
-
 
 function readPathFromValue(value: unknown, path: string): unknown {
   const cleaned = path.startsWith('$') ? path.slice(1) : path;
@@ -237,24 +259,6 @@ function resolvePath(scope: JsonRecord, path: string): unknown {
     throw new Error(`Cannot resolve path ${path}.`);
   }
   return resolved;
-}
-
-function resolveTemplateExpansionValue(value: unknown, paramScope: JsonRecord): unknown {
-  if (typeof value === 'string' && value.startsWith('$param.')) {
-    return resolvePath(paramScope, value);
-  }
-  if (Array.isArray(value)) {
-    return value.map((item) => resolveTemplateExpansionValue(item, paramScope));
-  }
-  if (value && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.entries(value as JsonRecord).map(([key, nested]) => [
-        key,
-        resolveTemplateExpansionValue(nested, paramScope),
-      ]),
-    );
-  }
-  return value;
 }
 
 function resolveTemplateParams(
@@ -291,25 +295,15 @@ function resolveTemplateParams(
   return { ...provided };
 }
 
-function mergeOperationFragment(
+function mergeMaterializedFragment(
   target: MaterializedRuntimeOperation,
-  fragment: Omit<RuntimeOperationSpec, 'use'>,
-  label: string,
+  fragment: Partial<AgentComputeSpec & AgentExecutionSpec>,
 ): void {
   if (fragment.instruction) {
-    if (target.instruction && target.instruction !== fragment.instruction) {
-      throw new Error(
-        `Conflicting instruction while materializing operation (${label}): ${target.instruction} vs ${fragment.instruction}.`,
-      );
-    }
     target.instruction = fragment.instruction;
   }
-
   if (fragment.inputs) {
-    target.inputs = {
-      ...target.inputs,
-      ...cloneJsonLike(fragment.inputs),
-    };
+    target.inputs = { ...target.inputs, ...cloneJsonLike(fragment.inputs) };
   }
   if (fragment.discover) {
     target.discover.push(...cloneJsonLike(fragment.discover));
@@ -321,16 +315,10 @@ function mergeOperationFragment(
     target.compute.push(...cloneJsonLike(fragment.compute));
   }
   if (fragment.args) {
-    target.args = {
-      ...target.args,
-      ...cloneJsonLike(fragment.args),
-    };
+    target.args = { ...target.args, ...cloneJsonLike(fragment.args) };
   }
   if (fragment.accounts) {
-    target.accounts = {
-      ...target.accounts,
-      ...cloneJsonLike(fragment.accounts),
-    };
+    target.accounts = { ...target.accounts, ...cloneJsonLike(fragment.accounts) };
   }
   if (fragment.remaining_accounts !== undefined) {
     const cloned = cloneJsonLike(fragment.remaining_accounts);
@@ -340,13 +328,7 @@ function mergeOperationFragment(
       target.remainingAccounts = cloned;
     }
   }
-  if (fragment.contract_view !== undefined) {
-    target.contractView = cloneJsonLike(fragment.contract_view);
-  }
-  if (fragment.index_view !== undefined) {
-    target.indexView = cloneJsonLike(fragment.index_view);
-  }
-  if (fragment.read_output !== undefined) {
+  if (fragment.read_output) {
     target.readOutput = cloneJsonLike(fragment.read_output);
   }
   if (fragment.pre && fragment.pre.length > 0) {
@@ -357,12 +339,70 @@ function mergeOperationFragment(
   }
 }
 
+export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> {
+  const cached = runtimePackCache.get(protocolId);
+  if (cached) {
+    return cached;
+  }
+  const runtime = await loadProtocolAgentRuntime(protocolId);
+  if (!runtime) {
+    throw new Error(`Protocol ${protocolId} has no agentRuntimePath.`);
+  }
+  const parsed = runtime as unknown as RuntimePack;
+  runtimePackCache.set(protocolId, parsed);
+  return parsed;
+}
+
+function getRawOperationSpec(
+  pack: RuntimePack,
+  operationId: string,
+): { kind: OperationKind; spec: RawOperationSpec } | null {
+  const contractRead = pack.reads?.contract?.[operationId];
+  if (contractRead) {
+    return { kind: 'contract_read', spec: contractRead };
+  }
+  const indexRead = pack.reads?.index?.[operationId];
+  if (indexRead) {
+    return { kind: 'index_read', spec: indexRead };
+  }
+  const compute = pack.computes?.[operationId];
+  if (compute) {
+    return { kind: 'compute', spec: compute };
+  }
+  const execution = pack.executions?.[operationId];
+  if (execution) {
+    return { kind: 'execution', spec: execution };
+  }
+  return null;
+}
+
 export function materializeRuntimeOperation(
   operationId: string,
-  operation: RuntimeOperationSpec,
+  operation: RawOperationSpec,
   pack: RuntimePack,
+  kind: OperationKind,
 ): MaterializedRuntimeOperation {
+  if (kind === 'contract_read' || kind === 'index_read') {
+    const readSpec = cloneJsonLike((operation as AgentContractReadSpec | AgentIndexReadSpec).read);
+    return {
+      kind,
+      instruction: '',
+      inputs: cloneJsonLike((operation as AgentContractReadSpec | AgentIndexReadSpec).inputs ?? {}),
+      discover: [],
+      derive: [],
+      compute: [],
+      args: {},
+      accounts: {},
+      remainingAccounts: [],
+      readSpec,
+      readOutput: cloneJsonLike((operation as AgentContractReadSpec | AgentIndexReadSpec).read_output),
+      pre: [],
+      post: [],
+    };
+  }
+
   const materialized: MaterializedRuntimeOperation = {
+    kind,
     instruction: '',
     inputs: {},
     discover: [],
@@ -375,7 +415,7 @@ export function materializeRuntimeOperation(
     post: [],
   };
 
-  for (const use of operation.use ?? []) {
+  for (const use of (operation as AgentComputeSpec | AgentExecutionSpec).use ?? []) {
     const templateName = use.template;
     if (!templateName) {
       throw new Error(`Operation ${operationId} contains use item without template name.`);
@@ -387,43 +427,20 @@ export function materializeRuntimeOperation(
     const params = resolveTemplateParams(templateName, template, use);
     const expanded = resolveTemplateExpansionValue(cloneJsonLike(template.expand), {
       param: params,
-    }) as Omit<RuntimeOperationSpec, 'use'>;
-    mergeOperationFragment(materialized, expanded, `template ${templateName}`);
+    }) as Partial<AgentComputeSpec & AgentExecutionSpec>;
+    mergeMaterializedFragment(materialized, expanded);
   }
 
-  mergeOperationFragment(
-    materialized,
-    cloneJsonLike({
-      instruction: operation.instruction,
-      inputs: operation.inputs,
-      discover: operation.discover,
-      derive: operation.derive,
-      compute: operation.compute,
-      args: operation.args,
-      accounts: operation.accounts,
-      remaining_accounts: operation.remaining_accounts,
-      contract_view: operation.contract_view,
-      index_view: operation.index_view,
-      read_output: operation.read_output,
-      pre: operation.pre,
-      post: operation.post,
-    }),
-    `operation ${operationId}`,
-  );
+  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentComputeSpec & AgentExecutionSpec>));
 
   for (const [inputName, inputSpec] of Object.entries(materialized.inputs)) {
-    const bindFrom =
-      typeof inputSpec.bind_from === 'string' && inputSpec.bind_from.trim().length > 0
-        ? inputSpec.bind_from.trim()
-        : typeof inputSpec.read_from === 'string' && inputSpec.read_from.trim().length > 0
-          ? inputSpec.read_from.trim()
-          : undefined;
-    if (bindFrom) {
-      inputSpec.bind_from = bindFrom;
+    if (typeof inputSpec.bind_from === 'string' && inputSpec.bind_from.trim().length > 0) {
+      inputSpec.bind_from = inputSpec.bind_from.trim();
+    } else {
+      delete inputSpec.bind_from;
     }
-    delete inputSpec.read_from;
-    if (inputSpec.bind_from !== undefined && inputSpec.bind_from.length === 0) {
-      throw new Error(`Operation ${operationId} input ${inputName}: bind_from must be a non-empty string.`);
+    if (inputSpec.bind_from === `$input.${inputName}`) {
+      delete inputSpec.bind_from;
     }
   }
 
@@ -431,11 +448,11 @@ export function materializeRuntimeOperation(
 }
 
 function normalizeReadOutputSpec(
-  spec: RuntimeOperationSpec['read_output'] | undefined,
+  spec: ReadOutputSpec | undefined,
   context: string,
 ):
   | {
-      type: 'array' | 'object' | 'scalar';
+      type: 'array' | 'object' | 'scalar' | 'list';
       source: string;
       title?: string;
       emptyText?: string;
@@ -449,32 +466,28 @@ function normalizeReadOutputSpec(
   if (!spec.source || typeof spec.source !== 'string' || spec.source.trim().length === 0) {
     throw new Error(`${context}: read_output.source is required.`);
   }
-  const normalized: {
-    type: 'array' | 'object' | 'scalar';
-    source: string;
-    title?: string;
-    emptyText?: string;
-    maxItems?: number;
-    itemLabelFields?: string[];
-  } = {
+  return {
     type: spec.type,
     source: spec.source,
+    ...(typeof spec.title === 'string' && spec.title.length > 0 ? { title: spec.title } : {}),
+    ...(typeof (spec.empty_text ?? spec.emptyText) === 'string' && String(spec.empty_text ?? spec.emptyText).length > 0
+      ? { emptyText: String(spec.empty_text ?? spec.emptyText) }
+      : {}),
+    ...(typeof (spec.max_items ?? spec.maxItems) === 'number' && Number.isInteger(spec.max_items ?? spec.maxItems) && Number(spec.max_items ?? spec.maxItems) > 0
+      ? { maxItems: Number(spec.max_items ?? spec.maxItems) }
+      : {}),
+    ...(Array.isArray(spec.item_label_fields ?? spec.itemLabelFields)
+      ? {
+          itemLabelFields: (spec.item_label_fields ?? spec.itemLabelFields)?.filter(
+            (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+          ),
+        }
+      : {}),
   };
-  if (typeof spec.title === 'string' && spec.title.length > 0) {
-    normalized.title = spec.title;
-  }
-  if (typeof spec.empty_text === 'string' && spec.empty_text.length > 0) {
-    normalized.emptyText = spec.empty_text;
-  }
-  if (typeof spec.max_items === 'number' && Number.isInteger(spec.max_items) && spec.max_items > 0) {
-    normalized.maxItems = spec.max_items;
-  }
-  if (Array.isArray(spec.item_label_fields) && spec.item_label_fields.length > 0) {
-    normalized.itemLabelFields = spec.item_label_fields.filter(
-      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
-    );
-  }
-  return normalized;
+}
+
+function isNamedStep(value: unknown, name: string): boolean {
+  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && (value as JsonRecord).name === name);
 }
 
 function resolveDiscoverStage(
@@ -488,7 +501,7 @@ function resolveDiscoverStage(
     return 'unknown';
   }
   const candidate = root === 'derived' && parts.length > 1 ? parts[1] : root;
-  if (root === 'input') {
+  if (root === 'input' || root === 'args') {
     return 'input';
   }
   if (operation.discover.some((step) => isNamedStep(step, candidate))) {
@@ -503,42 +516,23 @@ function resolveDiscoverStage(
   return 'unknown';
 }
 
-function isNamedStep(value: unknown, name: string): boolean {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && (value as JsonRecord).name === name);
-}
-
 function normalizeCrossValidation(
-  validate: RuntimeOperationSpec['validate'] | undefined,
+  validate: { cross?: Array<{ kind?: string; left?: string; right?: string; message?: string }> } | undefined,
 ): RuntimeOperationSummary['crossValidation'] {
-  const rules = Array.isArray(validate?.cross) ? validate!.cross : [];
+  const rules = Array.isArray(validate?.cross) ? validate.cross : [];
   const normalized = rules
     .map((rule) => {
-      if (
-        !rule ||
-        typeof rule !== 'object' ||
-        rule.kind !== 'not_equal' ||
-        typeof rule.left !== 'string' ||
-        typeof rule.right !== 'string'
-      ) {
+      if (!rule || rule.kind !== 'not_equal' || typeof rule.left !== 'string' || typeof rule.right !== 'string') {
         return null;
       }
       return {
         kind: 'not_equal' as const,
         left: rule.left.trim(),
         right: rule.right.trim(),
-        ...(typeof rule.message === 'string' && rule.message.trim().length > 0
-          ? { message: rule.message.trim() }
-          : {}),
+        ...(typeof rule.message === 'string' && rule.message.trim().length > 0 ? { message: rule.message.trim() } : {}),
       };
     })
-    .filter(
-      (rule): rule is {
-        kind: 'not_equal';
-        left: string;
-        right: string;
-        message?: string;
-      } => rule !== null && rule.left.length > 0 && rule.right.length > 0,
-    );
+    .filter((rule): rule is { kind: 'not_equal'; left: string; right: string; message?: string } => Boolean(rule && rule.left && rule.right));
   return normalized.length > 0 ? normalized : undefined;
 }
 
@@ -551,46 +545,54 @@ export async function listRuntimeOperations(options: {
   operations: RuntimeOperationSummary[];
 }> {
   const pack = await loadRuntimePack(options.protocolId);
-  const operations = pack.operations ?? {};
-  const summaries = Object.entries(operations)
-    .map(([operationId, operationSpec]) => {
-      const materialized = materializeRuntimeOperation(operationId, operationSpec, pack);
-      const inputs = Object.fromEntries(
-        Object.entries(materialized.inputs).map(([inputName, spec]) => [
-          inputName,
-          {
-            type: spec.type,
-            required: spec.required !== false,
-            ...(spec.default !== undefined ? { default: cloneJsonLike(spec.default) } : {}),
-            ...(typeof spec.bind_from === 'string' ? { bind_from: spec.bind_from } : {}),
-            ...(typeof spec.bind_from === 'string'
-              ? { read_stage: resolveDiscoverStage(spec.bind_from, materialized) }
-              : {}),
-            ...(spec.validate ? { validate: cloneJsonLike(spec.validate) } : {}),
-          },
-        ]),
-      );
+  const operations: RuntimeOperationSummary[] = [];
+  const pushSummary = (operationId: string, kind: OperationKind, spec: RawOperationSpec, materialized: MaterializedRuntimeOperation) => {
+    const inputs = Object.fromEntries(
+      Object.entries(materialized.inputs).map(([inputName, inputSpec]) => [
+        inputName,
+        {
+          type: inputSpec.type,
+          required: inputSpec.required !== false,
+          ...(inputSpec.default !== undefined ? { default: cloneJsonLike(inputSpec.default) } : {}),
+          ...(typeof inputSpec.bind_from === 'string' ? { bind_from: inputSpec.bind_from, read_stage: resolveDiscoverStage(inputSpec.bind_from, materialized) } : {}),
+          ...(inputSpec.validate ? { validate: cloneJsonLike(inputSpec.validate) } : {}),
+        },
+      ]),
+    );
+    operations.push({
+      operationId,
+      operationKind: kind,
+      instruction: materialized.instruction,
+      executionKind: kind === 'execution' ? 'write' : kind === 'compute' ? 'compute' : 'read',
+      inputs,
+      ...(normalizeCrossValidation((spec as AgentContractReadSpec | AgentComputeSpec | AgentExecutionSpec).validate) ? {
+        crossValidation: normalizeCrossValidation((spec as AgentContractReadSpec | AgentComputeSpec | AgentExecutionSpec).validate),
+      } : {}),
+      ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) ? {
+        readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`),
+      } : {}),
+    });
+  };
 
-      return {
-        operationId,
-        instruction: materialized.instruction,
-        executionKind: materialized.instruction ? 'write' : 'read',
-        inputs,
-        ...(normalizeCrossValidation(operationSpec.validate)
-          ? { crossValidation: normalizeCrossValidation(operationSpec.validate) }
-          : {}),
-        ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`)
-          ? { readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) }
-          : {}),
-      } satisfies RuntimeOperationSummary;
-    })
-    .sort((a, b) => a.operationId.localeCompare(b.operationId));
+  for (const [operationId, spec] of Object.entries(pack.reads?.contract ?? {})) {
+    pushSummary(operationId, 'contract_read', spec, materializeRuntimeOperation(operationId, spec, pack, 'contract_read'));
+  }
+  for (const [operationId, spec] of Object.entries(pack.reads?.index ?? {})) {
+    pushSummary(operationId, 'index_read', spec, materializeRuntimeOperation(operationId, spec, pack, 'index_read'));
+  }
+  for (const [operationId, spec] of Object.entries(pack.computes ?? {})) {
+    pushSummary(operationId, 'compute', spec, materializeRuntimeOperation(operationId, spec, pack, 'compute'));
+  }
+  for (const [operationId, spec] of Object.entries(pack.executions ?? {})) {
+    pushSummary(operationId, 'execution', spec, materializeRuntimeOperation(operationId, spec, pack, 'execution'));
+  }
 
+  operations.sort((a, b) => a.operationId.localeCompare(b.operationId));
   return {
     protocolId: options.protocolId,
     schema: pack.schema,
     version: pack.version,
-    operations: summaries,
+    operations,
   };
 }
 
@@ -599,18 +601,19 @@ export async function explainRuntimeOperation(options: {
   operationId: string;
 }): Promise<RuntimeOperationExplain> {
   const pack = await loadRuntimePack(options.protocolId);
-  const operationSpec = pack.operations?.[options.operationId];
-  if (!operationSpec) {
-    throw new Error(`Operation ${options.operationId} not found in runtime pack for ${options.protocolId}.`);
+  const resolved = getRawOperationSpec(pack, options.operationId);
+  if (!resolved) {
+    throw new Error(`Operation ${options.operationId} not found in agent runtime pack for ${options.protocolId}.`);
   }
-  const materialized = materializeRuntimeOperation(options.operationId, operationSpec, pack);
+  const materialized = materializeRuntimeOperation(options.operationId, resolved.spec, pack, resolved.kind);
   return {
     protocolId: options.protocolId,
     operationId: options.operationId,
+    operationKind: resolved.kind,
     schema: pack.schema,
     version: pack.version,
     instruction: materialized.instruction,
-    templateUse: cloneJsonLike(operationSpec.use ?? []),
+    templateUse: cloneJsonLike((resolved.spec as AgentComputeSpec | AgentExecutionSpec).use ?? []),
     inputs: cloneJsonLike(materialized.inputs),
     discover: cloneJsonLike(materialized.discover),
     derive: cloneJsonLike(materialized.derive),
@@ -618,19 +621,13 @@ export async function explainRuntimeOperation(options: {
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),
-    ...(materialized.contractView ? { contractView: cloneJsonLike(materialized.contractView) } : {}),
-    ...(materialized.indexView ? { indexView: cloneJsonLike(materialized.indexView) } : {}),
-    ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`)
-      ? { readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`) }
-      : {}),
+    ...(materialized.readSpec ? { readSpec: cloneJsonLike(materialized.readSpec) } : {}),
+    ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`) ? {
+      readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`),
+    } : {}),
     pre: cloneJsonLike(materialized.pre ?? []),
     post: cloneJsonLike(materialized.post ?? []),
   };
-}
-
-
-function isPlainObject(value: unknown): value is JsonRecord {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value));
 }
 
 export async function resolveProtocolForPacks(protocolId: string): Promise<ProtocolManifest> {

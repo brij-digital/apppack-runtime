@@ -105,7 +105,7 @@ type SearchQuerySpec = {
 
 type SearchViewDef = {
   kind: 'search';
-  source: 'rpc' | 'indexed' | 'hybrid';
+  source?: 'rpc' | 'indexed' | 'hybrid';
   entity_type: string;
   bootstrap: SearchBootstrapSpec;
   refresh?: Record<string, unknown>;
@@ -116,7 +116,7 @@ type SearchViewDef = {
 
 type AccountViewDef = {
   kind: 'account';
-  source: 'rpc' | 'indexed' | 'hybrid';
+  source?: 'rpc' | 'indexed' | 'hybrid';
   entity_type?: string;
   target: {
     address: unknown;
@@ -130,21 +130,21 @@ type AccountViewDef = {
 
 type ViewDef = SearchViewDef | AccountViewDef;
 
-type OperationDef = {
+type ReadOperationDef = {
   inputs?: Record<string, OperationInputDef>;
-  contract_view?: ViewDef;
-  index_view?: (ViewDef & { source_kind?: string; sync_disabled?: boolean });
+  read: ViewDef & { source_kind?: string; sync_disabled?: boolean };
   read_output?: ReadOutputDef;
 };
 
-type RuntimeDecoderArtifactDef = {
-  codamaPath?: string;
-};
-
 type MetaPack = {
-  protocolId: string;
-  decoderArtifacts?: Record<string, RuntimeDecoderArtifactDef>;
-  operations?: Record<string, OperationDef>;
+  protocol: {
+    protocolId: string;
+    codamaPath: string;
+  };
+  reads?: {
+    contract?: Record<string, ReadOperationDef>;
+    index?: Record<string, ReadOperationDef>;
+  };
 };
 
 type ListPoolsOptions = {
@@ -240,17 +240,9 @@ function parseOperationPack(runtimePath: string): MetaPack {
 
 function parseRuntimeCodamaDocument(runtimePath: string, protocolId: string): CodamaDocument {
   const runtime = parseOperationPack(runtimePath);
-  const artifactEntries = Object.entries(runtime.decoderArtifacts ?? {});
-  if (artifactEntries.length === 0) {
-    throw new Error(`runtime ${runtimePath} declares no decoder artifacts for ${protocolId}.`);
-  }
-  if (artifactEntries.length > 1) {
-    throw new Error(`runtime ${runtimePath} declares multiple decoder artifacts for ${protocolId}; view-read-service requires a single codec artifact.`);
-  }
-  const artifact = artifactEntries[0]?.[1] as RuntimeDecoderArtifactDef | undefined;
-  const codamaPath = typeof artifact?.codamaPath === 'string' ? artifact.codamaPath : null;
+  const codamaPath = typeof runtime.protocol?.codamaPath === 'string' ? runtime.protocol.codamaPath : null;
   if (!codamaPath || !codamaPath.startsWith('/idl/')) {
-    throw new Error(`runtime ${runtimePath} is missing a valid decoderArtifacts codamaPath for ${protocolId}.`);
+    throw new Error(`runtime ${runtimePath} is missing a valid protocol.codamaPath for ${protocolId}.`);
   }
   const codamaFilePath = path.join(path.dirname(runtimePath), codamaPath.slice('/idl/'.length));
   return JSON.parse(fs.readFileSync(codamaFilePath, 'utf8')) as CodamaDocument;
@@ -538,14 +530,16 @@ function normalizeIndexedFilterGroups(spec: ViewFilterGroup | undefined | null):
 }
 
 function compileOperation(meta: MetaPack, coder: DirectAccountsCoder, options: AppPackViewReadServiceOptions): CompiledOperation {
-  const operation = meta.operations?.[options.operationId];
+  const contractOperation = meta.reads?.contract?.[options.operationId];
+  const indexOperation = meta.reads?.index?.[options.operationId];
+  const operation = contractOperation ?? indexOperation;
   if (!operation) {
-    throw new Error(`Operation ${options.operationId} not found in the runtime pack.`);
+    throw new Error(`Read ${options.operationId} not found in the agent runtime pack.`);
   }
   const operationInputDefs = operation.inputs ?? {};
   const indexedAccountChangesView =
-    operation.index_view && operation.index_view.source_kind === 'account_changes'
-      ? operation.index_view
+    indexOperation?.read && indexOperation.read.source_kind === 'account_changes'
+      ? indexOperation.read
       : undefined;
 
   if (isSearchViewDef(indexedAccountChangesView)) {
@@ -561,8 +555,8 @@ function compileOperation(meta: MetaPack, coder: DirectAccountsCoder, options: A
     const accountType = view.query.decode?.account_type ?? view.bootstrap.account_type;
     const [pairParamA, pairParamB] = inferPairParamsFromView(operationInputDefs, view.query.filters);
     return {
-      protocolId: meta.protocolId,
-      namespace: `${meta.protocolId}.${options.operationId}`,
+      protocolId: meta.protocol.protocolId,
+      namespace: `${meta.protocol.protocolId}.${options.operationId}`,
       mode: 'search',
       defaultLimit: view.query.limit ?? operation.read_output?.max_items ?? 20,
       outputMaxItems: operation.read_output?.max_items ?? view.query.limit ?? 20,
@@ -586,12 +580,12 @@ function compileOperation(meta: MetaPack, coder: DirectAccountsCoder, options: A
     };
   }
 
-  if (isAccountViewDef(operation.contract_view)) {
-    const view = operation.contract_view;
+  if (contractOperation && isAccountViewDef(contractOperation.read)) {
+    const view = contractOperation.read;
     const accountType = view.target.account_type;
     return {
-      protocolId: meta.protocolId,
-      namespace: `${meta.protocolId}.${options.operationId}`,
+      protocolId: meta.protocol.protocolId,
+      namespace: `${meta.protocol.protocolId}.${options.operationId}`,
       mode: 'account',
       defaultLimit: 1,
       outputMaxItems: 1,
@@ -612,7 +606,7 @@ function compileOperation(meta: MetaPack, coder: DirectAccountsCoder, options: A
       targetAddress: view.target.address,
     };
   }
-  throw new Error(`Operation ${options.operationId} must declare a targeted contract_view account or an account_changes-backed index_view.`);
+  throw new Error(`Read ${options.operationId} must declare a targeted contract read or an account_changes-backed index read.`);
 }
 
 export class AppPackViewReadService {

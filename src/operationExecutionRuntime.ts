@@ -135,7 +135,7 @@ export type PreparedMetaOperation = {
   remainingAccounts: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   derived: Record<string, unknown>;
   readOutput?: {
-    type: 'array' | 'object' | 'scalar';
+    type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     title?: string;
     emptyText?: string;
@@ -634,11 +634,11 @@ export async function prepareRuntimeOperation(options: {
   const protocol = await getProtocolById(options.protocolId);
   const runtime = await loadRuntimePack(options.protocolId);
   const idl = await loadProtocolIdl(options.protocolId);
-  const operationSpec = runtime.operations?.[options.operationId];
+  const operationSpec = runtime.executions?.[options.operationId];
   if (!operationSpec) {
-    throw new Error(`Operation ${options.operationId} not found in runtime pack for ${options.protocolId}.`);
+    throw new Error(`Execution ${options.operationId} not found in agent runtime pack for ${options.protocolId}.`);
   }
-  const operation = materializeRuntimeOperation(options.operationId, operationSpec, runtime);
+  const operation = materializeRuntimeOperation(options.operationId, operationSpec, runtime, 'execution');
   const hydratedInput: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(operation.inputs)) {
     if (options.input[key] !== undefined) {
