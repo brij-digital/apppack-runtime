@@ -33,6 +33,9 @@ function normalizeBaseUrl(baseRaw: string | undefined): string {
   if (!trimmed) {
     return '/';
   }
+  if (PROTOCOL_URL_RE.test(trimmed) || trimmed.startsWith('//')) {
+    return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+  }
   const withLeadingSlash = trimmed.startsWith('/') ? trimmed : `/${trimmed}`;
   return withLeadingSlash.endsWith('/') ? withLeadingSlash : `${withLeadingSlash}/`;
 }
