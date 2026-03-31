@@ -59,7 +59,7 @@ type AgentIndexViewSpec = {
 type AgentComputeSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
-  derive?: unknown[];
+  resolve?: unknown[];
   compute?: unknown[];
   read_output?: ReadOutputSpec;
   validate?: {
@@ -75,7 +75,7 @@ type AgentComputeSpec = {
 type AgentExecutionSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
-  derive?: unknown[];
+  resolve?: unknown[];
   compute?: unknown[];
   args?: Record<string, unknown>;
   accounts?: Record<string, unknown>;
@@ -129,7 +129,7 @@ export type MaterializedRuntimeOperation = {
   kind: OperationKind;
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
-  derive: unknown[];
+  resolve: unknown[];
   compute: unknown[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
@@ -182,7 +182,7 @@ export type RuntimeOperationExplain = {
   operationKind: OperationKind;
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
-  derive: unknown[];
+  resolve: unknown[];
   compute: unknown[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
@@ -239,8 +239,8 @@ function mergeMaterializedFragment(
   if (fragment.inputs) {
     target.inputs = { ...target.inputs, ...cloneJsonLike(fragment.inputs) };
   }
-  if (fragment.derive) {
-    target.derive.push(...cloneJsonLike(fragment.derive));
+  if (fragment.resolve) {
+    target.resolve.push(...cloneJsonLike(fragment.resolve));
   }
   if (fragment.compute) {
     target.compute.push(...cloneJsonLike(fragment.compute));
@@ -315,7 +315,7 @@ export function materializeRuntimeOperation(
       kind,
       instruction: '',
       inputs: cloneJsonLike((operation as AgentIndexViewSpec).inputs ?? {}),
-      derive: [],
+      resolve: [],
       compute: [],
       args: {},
       accounts: {},
@@ -331,7 +331,7 @@ export function materializeRuntimeOperation(
     kind,
     instruction: '',
     inputs: {},
-    derive: [],
+    resolve: [],
     compute: [],
     args: {},
     accounts: {},
@@ -638,7 +638,7 @@ export async function explainRuntimeOperation(options: {
     operationKind: resolved.kind,
     instruction: materialized.instruction,
     inputs: cloneJsonLike(materialized.inputs),
-    derive: cloneJsonLike(materialized.derive),
+    resolve: cloneJsonLike(materialized.resolve),
     compute: cloneJsonLike(materialized.compute),
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),

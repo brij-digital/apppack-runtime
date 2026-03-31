@@ -3,7 +3,7 @@ import type { CodamaDocument as Idl } from './codamaIdl.js';
 
 export type ComputeStepResolved = {
   name: string;
-  compute: string;
+  kind: string;
   [key: string]: unknown;
 };
 
@@ -572,9 +572,9 @@ const COMPUTE_EXECUTORS: Record<string, ComputeExecutor> = {
 };
 
 export async function runRegisteredComputeStep(step: ComputeStepResolved, ctx: ComputeRuntimeContext): Promise<unknown> {
-  const executor = COMPUTE_EXECUTORS[step.compute];
+  const executor = COMPUTE_EXECUTORS[step.kind];
   if (!executor) {
-    throw new Error(`Unsupported compute step: ${step.compute}`);
+    throw new Error(`Unsupported compute step: ${step.kind}`);
   }
 
   return executor(step, ctx);

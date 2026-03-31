@@ -210,7 +210,7 @@ const CODAMA_ATA = {
   },
 };
 
-test('Codama default accounts drive templates and preview account metas', async () => {
+test('Codama default accounts drive runtime defaults and preview account metas', async () => {
   const originalFetch = globalThis.fetch;
   const originalBase = process.env.APPPACK_RUNTIME_BASE_URL;
   process.env.APPPACK_RUNTIME_BASE_URL = 'http://runner.test';

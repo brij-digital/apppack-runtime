@@ -7,7 +7,7 @@ test('meta compute accepts bare hex strings from decoded accounts', async () => 
   const result = await runRegisteredComputeStep(
     {
       name: 'sum_hex_values',
-      compute: 'math.add',
+      kind: 'math.add',
       values: ['03cfdaf40e3b4c', '06fc32ee54'],
     },
     {

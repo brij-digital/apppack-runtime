@@ -24,15 +24,15 @@ const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsL
 
 type JsonRecord = Record<string, unknown>;
 
-type DeriveStep = {
+type ResolveStep = {
   name: string;
-  resolver: string;
+  kind: string;
   [key: string]: unknown;
 };
 
 type ComputeStep = {
   name: string;
-  compute: string;
+  kind: string;
   [key: string]: unknown;
 };
 
@@ -436,11 +436,11 @@ function resolvePreInstructions(pre: PreInstructionSpec[] | undefined, scope: Js
     });
 }
 
-async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unknown> {
-  if (step.resolver === 'wallet_pubkey') {
+async function runResolver(step: ResolveStep, ctx: ResolverContext): Promise<unknown> {
+  if (step.kind === 'wallet_pubkey') {
     return ctx.walletPublicKey.toBase58();
   }
-  if (step.resolver === 'decode_account') {
+  if (step.kind === 'decode_account') {
     const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `decode_account:${step.name}:address`);
     const accountType = asString(step.account_type, `decode_account:${step.name}:account_type`);
     const info = await ctx.connection.getAccountInfo(address, 'confirmed');
@@ -450,7 +450,7 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
     const coder = new DirectAccountsCoder(ctx.idl);
     return normalizeRuntimeValue(coder.decode(accountType, info.data));
   }
-  if (step.resolver === 'account_owner') {
+  if (step.kind === 'account_owner') {
     const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `account_owner:${step.name}:address`);
     const info = await ctx.connection.getAccountInfo(address, 'confirmed');
     if (!info) {
@@ -458,7 +458,7 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
     }
     return info.owner.toBase58();
   }
-  if (step.resolver === 'token_account_balance') {
+  if (step.kind === 'token_account_balance') {
     const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `token_account_balance:${step.name}:address`);
     try {
       const balance = await ctx.connection.getTokenAccountBalance(address, 'confirmed');
@@ -472,19 +472,19 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
       return String(defaultValue);
     }
   }
-  if (step.resolver === 'token_supply') {
+  if (step.kind === 'token_supply') {
     const mint = asPubkey(resolveTemplateValue(step.mint, ctx.scope), `token_supply:${step.name}:mint`);
     const supply = await ctx.connection.getTokenSupply(mint, 'confirmed');
     return supply.value.amount;
   }
-  if (step.resolver === 'ata') {
+  if (step.kind === 'ata') {
     const owner = asPubkey(resolveTemplateValue(step.owner, ctx.scope), `ata:${step.name}:owner`);
     const mint = asPubkey(resolveTemplateValue(step.mint, ctx.scope), `ata:${step.name}:mint`);
     const tokenProgram = step.token_program === undefined ? undefined : asPubkey(resolveTemplateValue(step.token_program, ctx.scope), `ata:${step.name}:token_program`);
     const allowOwnerOffCurve = step.allow_owner_off_curve === undefined ? false : Boolean(resolveTemplateValue(step.allow_owner_off_curve, ctx.scope));
     return getAssociatedTokenAddressSync(mint, owner, allowOwnerOffCurve, tokenProgram).toBase58();
   }
-  if (step.resolver === 'pda') {
+  if (step.kind === 'pda') {
     const programId = asPubkey(resolveTemplateValue(step.program_id, ctx.scope), `pda:${step.name}:program_id`);
     const seeds = Array.isArray(step.seeds) ? step.seeds.map((seed, index) => {
       if (typeof seed === 'string' && seed.startsWith('utf8:')) {
@@ -494,17 +494,17 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
     }) : [];
     return PublicKey.findProgramAddressSync(seeds, programId)[0].toBase58();
   }
-  if (step.resolver === 'unix_timestamp') {
+  if (step.kind === 'unix_timestamp') {
     return Math.floor(Date.now() / 1000);
   }
-  throw new Error(`Unsupported resolver: ${step.resolver}`);
+  throw new Error(`Unsupported resolver: ${step.kind}`);
 }
 
 async function runComputeStep(step: ComputeStep, ctx: ResolverContext): Promise<unknown> {
   const resolvedStep = asRecord(normalizeRuntimeValue(resolveTemplateValue(step, ctx.scope)), `compute:${step.name}`);
-  const compute = asString(resolvedStep.compute, `compute:${step.name}:compute`);
+  const kind = asString(resolvedStep.kind, `compute:${step.name}:kind`);
   return runRegisteredComputeStep(
-    { ...resolvedStep, name: step.name, compute },
+    { ...resolvedStep, name: step.name, kind },
     {
       protocolId: ctx.protocol.id,
       programId: ctx.protocol.programId,
@@ -571,7 +571,7 @@ export async function prepareRuntimeOperation(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.derive as DeriveStep[]) {
+  for (const step of operation.resolve as ResolveStep[]) {
     const value = await runResolver(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;
@@ -659,7 +659,7 @@ export async function runRuntimeCompute(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.derive as DeriveStep[]) {
+  for (const step of operation.resolve as ResolveStep[]) {
     const value = await runResolver(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;
