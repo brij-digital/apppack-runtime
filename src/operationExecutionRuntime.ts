@@ -586,12 +586,26 @@ export async function prepareRuntimeOperation(options: {
   const resolvedArgs = normalizeRuntimeValue(resolveTemplateValue(operation.args ?? {}, scope));
   const resolvedAccounts = normalizeRuntimeValue(resolveTemplateValue(operation.accounts ?? {}, scope));
   const resolvedRemainingAccounts = normalizeRuntimeValue(resolveTemplateValue(operation.remainingAccounts ?? [], scope));
+  const explicitAccounts = assertStringRecord(resolvedAccounts, 'accounts');
+  const finalAccounts =
+    operation.instruction
+      ? (
+          await previewIdlInstruction({
+            protocolId: options.protocolId,
+            instructionName: operation.instruction,
+            args: resolvedArgs as Record<string, unknown>,
+            accounts: explicitAccounts,
+            walletPublicKey: options.walletPublicKey,
+          })
+        ).resolvedAccounts
+      : explicitAccounts;
+  scope.instruction_accounts = finalAccounts;
   return {
     protocolId: options.protocolId,
     operationId: options.operationId,
     instructionName: operation.instruction ? operation.instruction : null,
     args: resolvedArgs as Record<string, unknown>,
-    accounts: assertStringRecord(resolvedAccounts, 'accounts'),
+    accounts: finalAccounts,
     remainingAccounts: assertRemainingAccounts(resolvedRemainingAccounts, 'remaining_accounts'),
     derived,
     readOutput: normalizeReadOutputSpec(operation.readOutput, `${options.protocolId}/${options.operationId}`),

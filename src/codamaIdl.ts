@@ -31,6 +31,7 @@ export type CodamaInstructionAccountDefault =
       kind: 'pda';
       pdaName: string;
       seeds: CodamaPdaSeedDef[];
+      programId?: string;
     };
 
 export type CodamaPdaSeedDef =
@@ -74,7 +75,7 @@ const protocolCodamaCache = new Map<string, Promise<CodamaDocument>>();
 const instructionCache = new WeakMap<JsonRecord, CodamaInstructionDef[]>();
 const accountCache = new WeakMap<JsonRecord, CodamaAccountDef[]>();
 const typeDefCache = new WeakMap<JsonRecord, CodamaTypeDef[]>();
-const pdaCache = new WeakMap<JsonRecord, Map<string, CodamaPdaSeedDef[]>>();
+const pdaCache = new WeakMap<JsonRecord, Map<string, { name: string; seeds: CodamaPdaSeedDef[]; programId?: string }>>();
 
 function asObject(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -146,6 +147,17 @@ function extractBytesValueNode(value: unknown, label: string): number[] {
     return Array.from(bs58.decode(data));
   }
   throw new Error(`${label}.encoding must be base16 or base58.`);
+}
+
+function extractPdaSeedBytes(value: unknown, label: string): number[] {
+  const node = asObject(value, label);
+  if (node.kind === 'bytesValueNode') {
+    return extractBytesValueNode(node, label);
+  }
+  if (node.kind === 'publicKeyValueNode') {
+    return Array.from(bs58.decode(asString(node.publicKey, `${label}.publicKey`)));
+  }
+  throw new Error(`${label} kind ${String(node.kind)} is unsupported for constant PDA seed.`);
 }
 
 function extractDiscriminatorField(fields: unknown[], label: string): number[] {
@@ -275,6 +287,30 @@ function convertDefinedType(definedType: unknown, context: string): CodamaTypeDe
   throw new Error(`${context}.type kind ${String(type.kind)} is unsupported.`);
 }
 
+function convertPdaNode(node: JsonRecord, context: string): { name: string; seeds: CodamaPdaSeedDef[]; programId?: string } {
+  const name = toSnakeCase(asString(node.name, `${context}.name`));
+  const seeds = asArray(node.seeds ?? [], `${context}.seeds`).map((seed, seedIndex) => {
+    const seedNode = asObject(seed, `${context}.seeds[${seedIndex}]`);
+    if (seedNode.kind === 'constantPdaSeedNode') {
+      return {
+        kind: 'constant_bytes' as const,
+        bytes: extractPdaSeedBytes(seedNode.value, `${context}.seeds[${seedIndex}].value`),
+      };
+    }
+    if (seedNode.kind === 'variablePdaSeedNode') {
+      return {
+        kind: 'account' as const,
+        name: toSnakeCase(asString(seedNode.name, `${context}.seeds[${seedIndex}].name`)),
+      };
+    }
+    throw new Error(`${context}.seeds[${seedIndex}] kind ${String(seedNode.kind)} is unsupported.`);
+  });
+  const programId = typeof node.programId === 'string' && node.programId.trim().length > 0
+    ? node.programId.trim()
+    : undefined;
+  return { name, seeds, ...(programId ? { programId } : {}) };
+}
+
 function convertInstructionAccount(account: unknown, context: string): CodamaInstructionAccountDef {
   const entry = asObject(account, context);
   const output: CodamaInstructionAccountDef = {
@@ -301,15 +337,19 @@ function convertInstructionAccount(account: unknown, context: string): CodamaIns
   }
   if (defaultValue?.kind === 'pdaValueNode') {
     const pdaRef = asObject(defaultValue.pda, `${context}.defaultValue.pda`);
-    const pdaName = toSnakeCase(asString(pdaRef.name, `${context}.defaultValue.pda.name`));
-    const seeds = listCodamaPdas(entry.__codamaProgram as JsonRecord).get(pdaName);
-    if (!seeds) {
-      throw new Error(`${context}.defaultValue.pda references unknown PDA ${pdaName}.`);
+    const pda = pdaRef.kind === 'pdaNode'
+      ? convertPdaNode(pdaRef, `${context}.defaultValue.pda`)
+      : listCodamaPdas(entry.__codamaProgram as JsonRecord).get(
+          toSnakeCase(asString(pdaRef.name, `${context}.defaultValue.pda.name`)),
+        );
+    if (!pda) {
+      throw new Error(`${context}.defaultValue.pda references unknown PDA ${String(pdaRef.name)}.`);
     }
     output.defaultValue = {
       kind: 'pda',
-      pdaName,
-      seeds,
+      pdaName: pda.name,
+      seeds: pda.seeds,
+      ...(pda.programId ? { programId: pda.programId } : {}),
     };
   }
   return output;
@@ -344,32 +384,16 @@ function convertInstruction(instruction: unknown, context: string): CodamaInstru
   };
 }
 
-function listCodamaPdas(program: JsonRecord): Map<string, CodamaPdaSeedDef[]> {
+function listCodamaPdas(program: JsonRecord): Map<string, { name: string; seeds: CodamaPdaSeedDef[]; programId?: string }> {
   const cached = pdaCache.get(program);
   if (cached) {
     return cached;
   }
-  const pdas = new Map<string, CodamaPdaSeedDef[]>();
+  const pdas = new Map<string, { name: string; seeds: CodamaPdaSeedDef[]; programId?: string }>();
   for (const [index, pda] of asArray(program.pdas ?? [], 'codama.program.pdas').entries()) {
     const entry = asObject(pda, `codama.program.pdas[${index}]`);
-    const name = toSnakeCase(asString(entry.name, `codama.program.pdas[${index}].name`));
-    const seeds = asArray(entry.seeds ?? [], `codama.program.pdas[${index}].seeds`).map((seed, seedIndex) => {
-      const seedNode = asObject(seed, `codama.program.pdas[${index}].seeds[${seedIndex}]`);
-      if (seedNode.kind === 'constantPdaSeedNode') {
-        return {
-          kind: 'constant_bytes' as const,
-          bytes: extractBytesValueNode(seedNode.value, `codama.program.pdas[${index}].seeds[${seedIndex}].value`),
-        };
-      }
-      if (seedNode.kind === 'variablePdaSeedNode') {
-        return {
-          kind: 'account' as const,
-          name: toSnakeCase(asString(seedNode.name, `codama.program.pdas[${index}].seeds[${seedIndex}].name`)),
-        };
-      }
-      throw new Error(`codama.program.pdas[${index}].seeds[${seedIndex}] kind ${String(seedNode.kind)} is unsupported.`);
-    });
-    pdas.set(name, seeds);
+    const parsed = convertPdaNode(entry, `codama.program.pdas[${index}]`);
+    pdas.set(parsed.name, parsed);
   }
   pdaCache.set(program, pdas);
   return pdas;

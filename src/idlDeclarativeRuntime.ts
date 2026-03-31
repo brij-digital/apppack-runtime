@@ -354,16 +354,18 @@ function findSeedAccountKeyName(
   return matches[0]!.keyName;
 }
 
-function buildAccountMetas(options: {
+function resolveInstructionAccounts(options: {
   idlInstruction: IdlInstruction;
   accountsInput: Record<string, string>;
   walletPublicKey: PublicKey;
   programId: string;
-}): AccountMeta[] {
+}): {
+  accountMetas: AccountMeta[];
+  resolvedAccounts: Record<string, string>;
+} {
   const flattened = flattenInstructionAccounts(options.idlInstruction.accounts);
   const flattenedByKey = new Map(flattened.map((entry) => [entry.keyName, entry]));
   const resolved = new Map<string, PublicKey | null>();
-  const programId = new PublicKey(options.programId);
 
   function resolveFlattenedAccount(keyName: string, resolving: Set<string>): PublicKey | null {
     if (resolved.has(keyName)) {
@@ -410,7 +412,8 @@ function buildAccountMetas(options: {
         }
         return seedPubkey.toBuffer();
       });
-      pubkey = PublicKey.findProgramAddressSync(seedBuffers, programId)[0];
+      const pdaProgramId = new PublicKey(definition.defaultValue.programId ?? options.programId);
+      pubkey = PublicKey.findProgramAddressSync(seedBuffers, pdaProgramId)[0];
     } else if (!optional) {
       throw new Error(`Missing account mapping for ${keyName}.`);
     }
@@ -426,7 +429,7 @@ function buildAccountMetas(options: {
     return pubkey;
   }
 
-  return flattened
+  const accountMetas = flattened
     .map(({ keyName, definition }) => {
       const signer = Boolean(definition.signer ?? definition.isSigner);
       const writable = Boolean(definition.writable ?? definition.isMut);
@@ -441,6 +444,22 @@ function buildAccountMetas(options: {
       } as AccountMeta;
     })
     .filter((meta): meta is AccountMeta => meta !== null);
+  const resolvedAccounts = Object.fromEntries(
+    flattened.flatMap(({ keyName }) => {
+      const pubkey = resolved.get(keyName);
+      return pubkey ? [[keyName, pubkey.toBase58()] as const] : [];
+    }),
+  );
+  return { accountMetas, resolvedAccounts };
+}
+
+function buildAccountMetas(options: {
+  idlInstruction: IdlInstruction;
+  accountsInput: Record<string, string>;
+  walletPublicKey: PublicKey;
+  programId: string;
+}): AccountMeta[] {
+  return resolveInstructionAccounts(options).accountMetas;
 }
 
 function buildInstructionArgs(
@@ -834,6 +853,7 @@ export async function previewIdlInstruction(options: {
   keys: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   args: Record<string, unknown>;
   accounts: Record<string, string>;
+  resolvedAccounts: Record<string, string>;
 }> {
   const { protocol, idl } = await loadProtocolAndIdl(options.protocolId);
   const instruction = findInstructionByName(idl, options.instructionName);
@@ -845,7 +865,7 @@ export async function previewIdlInstruction(options: {
     throw new Error('Failed to encode instruction from IDL.');
   }
 
-  const accountMetas = buildAccountMetas({
+  const { accountMetas, resolvedAccounts } = resolveInstructionAccounts({
     idlInstruction: instruction,
     accountsInput: options.accounts,
     walletPublicKey: options.walletPublicKey,
@@ -866,5 +886,6 @@ export async function previewIdlInstruction(options: {
     })),
     args: options.args,
     accounts: options.accounts,
+    resolvedAccounts,
   };
 }
