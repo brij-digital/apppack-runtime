@@ -43,13 +43,6 @@ type RuntimeInputSpec = {
 type ReadOutputSpec = {
   type: 'array' | 'object' | 'scalar' | 'list';
   source: string;
-  title?: string;
-  empty_text?: string;
-  emptyText?: string;
-  max_items?: number;
-  maxItems?: number;
-  item_label_fields?: string[];
-  itemLabelFields?: string[];
   object_schema?: OutputObjectSchemaSpec;
   item_schema?: OutputObjectSchemaSpec;
   scalar_type?: string;
@@ -130,15 +123,11 @@ type RuntimeValidationSpec = {
 
 export type RuntimePack = {
   schema: 'solana-agent-runtime.v1';
-  version: string;
   protocol: {
     protocolId: string;
-    label?: string;
     programId: string;
     codamaPath: string;
   };
-  navigation?: Record<string, unknown>;
-  sources?: Record<string, unknown>;
   index_views?: Record<string, AgentIndexViewSpec>;
   computes?: Record<string, AgentComputeSpec>;
   contract_writes?: Record<string, AgentExecutionSpec>;
@@ -201,10 +190,6 @@ export type RuntimeOperationSummary = {
   readOutput?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
-    title?: string;
-    emptyText?: string;
-    maxItems?: number;
-    itemLabelFields?: string[];
     objectSchema?: OutputObjectSchemaSpec;
     itemSchema?: OutputObjectSchemaSpec;
     scalarType?: string;
@@ -215,8 +200,6 @@ export type RuntimeOperationExplain = {
   protocolId: string;
   operationId: string;
   operationKind: OperationKind;
-  schema: string | null;
-  version: string;
   instruction: string;
   templateUse: unknown[];
   inputs: Record<string, RuntimeInputSpec>;
@@ -229,10 +212,6 @@ export type RuntimeOperationExplain = {
   readOutput?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
-    title?: string;
-    emptyText?: string;
-    maxItems?: number;
-    itemLabelFields?: string[];
     objectSchema?: OutputObjectSchemaSpec;
     itemSchema?: OutputObjectSchemaSpec;
     scalarType?: string;
@@ -462,10 +441,6 @@ function normalizeReadOutputSpec(
   | {
       type: 'array' | 'object' | 'scalar' | 'list';
       source: string;
-      title?: string;
-      emptyText?: string;
-      maxItems?: number;
-      itemLabelFields?: string[];
       objectSchema?: OutputObjectSchemaSpec;
       itemSchema?: OutputObjectSchemaSpec;
       scalarType?: string;
@@ -480,20 +455,6 @@ function normalizeReadOutputSpec(
   return {
     type: spec.type,
     source: spec.source,
-    ...(typeof spec.title === 'string' && spec.title.length > 0 ? { title: spec.title } : {}),
-    ...(typeof (spec.empty_text ?? spec.emptyText) === 'string' && String(spec.empty_text ?? spec.emptyText).length > 0
-      ? { emptyText: String(spec.empty_text ?? spec.emptyText) }
-      : {}),
-    ...(typeof (spec.max_items ?? spec.maxItems) === 'number' && Number.isInteger(spec.max_items ?? spec.maxItems) && Number(spec.max_items ?? spec.maxItems) > 0
-      ? { maxItems: Number(spec.max_items ?? spec.maxItems) }
-      : {}),
-    ...(Array.isArray(spec.item_label_fields ?? spec.itemLabelFields)
-      ? {
-          itemLabelFields: (spec.item_label_fields ?? spec.itemLabelFields)?.filter(
-            (entry): entry is string => typeof entry === 'string' && entry.length > 0,
-          ),
-        }
-      : {}),
     ...(spec.object_schema ? { objectSchema: cloneJsonLike(spec.object_schema) } : {}),
     ...(spec.item_schema ? { itemSchema: cloneJsonLike(spec.item_schema) } : {}),
     ...(typeof spec.scalar_type === 'string' && spec.scalar_type.length > 0 ? { scalarType: spec.scalar_type } : {}),
@@ -696,8 +657,6 @@ export async function listRuntimeOperations(options: {
   protocolId: string;
 }): Promise<{
   protocolId: string;
-  schema: string | null;
-  version: string;
   operations: RuntimeOperationSummary[];
 }> {
   const pack = await loadRuntimePack(options.protocolId);
@@ -748,8 +707,6 @@ export async function listRuntimeOperations(options: {
   operations.sort((a, b) => a.operationId.localeCompare(b.operationId));
   return {
     protocolId: options.protocolId,
-    schema: pack.schema,
-    version: pack.version,
     operations,
   };
 }
@@ -768,8 +725,6 @@ export async function explainRuntimeOperation(options: {
     protocolId: options.protocolId,
     operationId: options.operationId,
     operationKind: resolved.kind,
-    schema: pack.schema,
-    version: pack.version,
     instruction: materialized.instruction,
     templateUse: cloneJsonLike((resolved.spec as AgentComputeSpec | AgentExecutionSpec).use ?? []),
     inputs: cloneJsonLike(materialized.inputs),

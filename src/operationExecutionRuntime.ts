@@ -18,13 +18,11 @@ import {
   explainRuntimeOperation,
   resolveRuntimeOperation,
 } from './operationPackRuntime.js';
-import { resolveAppUrl } from './appUrl.js';
 
 const DEFAULT_SPL_TOKEN_PROGRAM = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL';
 
 type JsonRecord = Record<string, unknown>;
-type LookupMode = 'first' | 'all';
 
 type DeriveStep = {
   name: string;
@@ -130,10 +128,6 @@ export type PreparedMetaOperation = {
   readOutput?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
-    title?: string;
-    emptyText?: string;
-    maxItems?: number;
-    itemLabelFields?: string[];
     objectSchema?: {
       entity_type?: string;
       identity_fields?: string[];
@@ -158,10 +152,6 @@ export type PreparedMetaCompute = {
   readOutput?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
-    title?: string;
-    emptyText?: string;
-    maxItems?: number;
-    itemLabelFields?: string[];
     objectSchema?: {
       entity_type?: string;
       identity_fields?: string[];
@@ -192,7 +182,6 @@ type ResolverContext = {
 };
 
 const idlCache = new Map<string, Idl>();
-const lookupSourceCache = new Map<string, { expiresAt: number; items: unknown[] }>();
 
 function asRecord(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -354,24 +343,6 @@ function normalizeReadOutputSpec(
     throw new Error(`${context}: read_output.source is required.`);
   }
   const normalized: NonNullable<PreparedMetaOperation['readOutput']> = { type: spec.type, source: spec.source };
-  if (typeof spec.title === 'string' && spec.title.length > 0) {
-    normalized.title = spec.title;
-  }
-  if (typeof (spec.empty_text ?? spec.emptyText) === 'string' && String(spec.empty_text ?? spec.emptyText).length > 0) {
-    normalized.emptyText = String(spec.empty_text ?? spec.emptyText);
-  }
-  if (typeof (spec.max_items ?? spec.maxItems) === 'number' && Number.isInteger(spec.max_items ?? spec.maxItems) && Number(spec.max_items ?? spec.maxItems) > 0) {
-    normalized.maxItems = Number(spec.max_items ?? spec.maxItems);
-  }
-  const itemLabelFields = spec.item_label_fields ?? spec.itemLabelFields;
-  if (Array.isArray(itemLabelFields)) {
-    const fields = itemLabelFields.filter(
-      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
-    );
-    if (fields.length > 0) {
-      normalized.itemLabelFields = fields;
-    }
-  }
   if (spec.object_schema && typeof spec.object_schema === 'object') {
     normalized.objectSchema = normalizeRuntimeValue(spec.object_schema) as NonNullable<typeof normalized.objectSchema>;
   }
@@ -392,56 +363,6 @@ async function loadProtocolIdl(protocolId: string): Promise<Idl> {
   const parsed = await loadProtocolCodamaFromRuntime(protocolId);
   idlCache.set(protocolId, parsed);
   return parsed;
-}
-
-function resolveWhereFilter(where: unknown, scope: JsonRecord, label: string): JsonRecord {
-  if (where === undefined) {
-    return {};
-  }
-  return asRecord(resolveTemplateValue(where, scope), label);
-}
-
-function itemMatchesWhere(item: unknown, where: JsonRecord): boolean {
-  return Object.entries(where).every(([path, expected]) => valuesEqual(readPathFromValue(item, path), expected));
-}
-
-function applySelectTemplate(select: unknown, item: unknown, scope: JsonRecord): unknown {
-  if (select === undefined) {
-    return item;
-  }
-  return resolveTemplateValue(select, { ...scope, item });
-}
-
-function resolveCollectionMode(mode: LookupMode | undefined): LookupMode {
-  if (!mode) {
-    return 'first';
-  }
-  if (mode === 'first' || mode === 'all') {
-    return mode;
-  }
-  throw new Error(`Unsupported collection mode: ${String(mode)}`);
-}
-
-function resolveCollectionCandidates(step: DeriveStep, items: unknown[], scope: JsonRecord): unknown[] {
-  const where = resolveWhereFilter(step.where, scope, `${step.resolver}:${step.name}:where`);
-  return items.filter((item) => itemMatchesWhere(item, where)).map((item) => applySelectTemplate(step.select, item, scope));
-}
-
-function readItemsByPath(value: unknown, path?: string): unknown[] {
-  if (path) {
-    const resolved = readPathFromValue(value, path);
-    if (!Array.isArray(resolved)) {
-      throw new Error(`items_path ${path} did not resolve to an array.`);
-    }
-    return resolved;
-  }
-  if (Array.isArray(value)) {
-    return value;
-  }
-  if (value && typeof value === 'object' && Array.isArray((value as JsonRecord).items)) {
-    return (value as JsonRecord).items as unknown[];
-  }
-  throw new Error('Lookup source response must be an array or expose an array in "items".');
 }
 
 function evaluateCondition(condition: MetaCondition, scope: JsonRecord): boolean {
@@ -515,38 +436,6 @@ function resolvePreInstructions(pre: PreInstructionSpec[] | undefined, scope: Js
     });
 }
 
-async function loadLookupItems(step: DeriveStep, ctx: ResolverContext): Promise<unknown[]> {
-  const sourceName = typeof step.source === 'string' ? step.source : null;
-  if (!sourceName) {
-    throw new Error(`Resolver lookup for ${step.name} missing source.`);
-  }
-  const source = ctx.runtime.sources?.[sourceName] as { kind: 'inline' | 'http_json'; items?: unknown[]; url?: string; items_path?: string; ttl_ms?: number } | undefined;
-  if (!source) {
-    throw new Error(`Lookup source ${sourceName} not found in runtime pack.`);
-  }
-  if (source.kind === 'inline') {
-    return Array.isArray(source.items) ? source.items : [];
-  }
-  const resolvedUrl = asString(resolveTemplateValue(source.url, ctx.scope), `lookup:${step.name}:source.url`);
-  const cacheKey = `${ctx.protocol.id}:${sourceName}:${resolvedUrl}`;
-  const now = Date.now();
-  const ttlMs = typeof source.ttl_ms === 'number' ? source.ttl_ms : 0;
-  const cached = lookupSourceCache.get(cacheKey);
-  if (cached && cached.expiresAt >= now) {
-    return cached.items;
-  }
-  const response = await fetch(resolveAppUrl(resolvedUrl));
-  if (!response.ok) {
-    throw new Error(`Lookup source ${sourceName} fetch failed: ${response.status} ${response.statusText}`);
-  }
-  const body = (await response.json()) as unknown;
-  const items = readItemsByPath(body, source.items_path);
-  if (ttlMs > 0) {
-    lookupSourceCache.set(cacheKey, { expiresAt: now + ttlMs, items });
-  }
-  return items;
-}
-
 async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unknown> {
   if (step.resolver === 'wallet_pubkey') {
     return ctx.walletPublicKey.toBase58();
@@ -604,15 +493,6 @@ async function runResolver(step: DeriveStep, ctx: ResolverContext): Promise<unkn
       return asPubkey(resolveTemplateValue(seed, ctx.scope), `pda:${step.name}:seed[${index}]`).toBuffer();
     }) : [];
     return PublicKey.findProgramAddressSync(seeds, programId)[0].toBase58();
-  }
-  if (step.resolver === 'lookup') {
-    const mode = resolveCollectionMode(step.mode as LookupMode | undefined);
-    const items = await loadLookupItems(step, ctx);
-    const candidates = resolveCollectionCandidates(step, items, ctx.scope);
-    if (candidates.length === 0) {
-      throw new Error(`lookup resolver returned no candidate for step ${step.name}.`);
-    }
-    return mode === 'all' ? normalizeRuntimeValue(candidates) : normalizeRuntimeValue(candidates[0]);
   }
   if (step.resolver === 'unix_timestamp') {
     return Math.floor(Date.now() / 1000);
