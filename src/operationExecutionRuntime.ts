@@ -494,9 +494,6 @@ async function runResolver(step: ResolveStep, ctx: ResolverContext): Promise<unk
     }) : [];
     return PublicKey.findProgramAddressSync(seeds, programId)[0].toBase58();
   }
-  if (step.kind === 'unix_timestamp') {
-    return Math.floor(Date.now() / 1000);
-  }
   throw new Error(`Unsupported resolver: ${step.kind}`);
 }
 
