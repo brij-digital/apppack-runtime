@@ -29,7 +29,6 @@ type RuntimeInputSpec = {
   type: string;
   required?: boolean;
   default?: unknown;
-  bind_from?: string;
   validate?: {
     required?: boolean;
     min?: string | number;
@@ -176,8 +175,6 @@ export type RuntimeOperationInputSummary = {
   type: string;
   required: boolean;
   default?: unknown;
-  bind_from?: string;
-  read_stage?: 'derive' | 'compute' | 'input' | 'unknown';
   validate?: {
     required?: boolean;
     min?: string | number;
@@ -455,17 +452,6 @@ export function materializeRuntimeOperation(
 
   mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentComputeSpec & AgentExecutionSpec>));
 
-  for (const [inputName, inputSpec] of Object.entries(materialized.inputs)) {
-    if (typeof inputSpec.bind_from === 'string' && inputSpec.bind_from.trim().length > 0) {
-      inputSpec.bind_from = inputSpec.bind_from.trim();
-    } else {
-      delete inputSpec.bind_from;
-    }
-    if (inputSpec.bind_from === `$input.${inputName}`) {
-      delete inputSpec.bind_from;
-    }
-  }
-
   return materialized;
 }
 
@@ -512,33 +498,6 @@ function normalizeReadOutputSpec(
     ...(spec.item_schema ? { itemSchema: cloneJsonLike(spec.item_schema) } : {}),
     ...(typeof spec.scalar_type === 'string' && spec.scalar_type.length > 0 ? { scalarType: spec.scalar_type } : {}),
   };
-}
-
-function isNamedStep(value: unknown, name: string): boolean {
-  return Boolean(value && typeof value === 'object' && !Array.isArray(value) && (value as JsonRecord).name === name);
-}
-
-function resolveReadStage(
-  path: string,
-  operation: MaterializedRuntimeOperation,
-): 'derive' | 'compute' | 'input' | 'unknown' {
-  const cleaned = path.startsWith('$') ? path.slice(1) : path;
-  const parts = cleaned.split('.').filter(Boolean);
-  const [root] = parts;
-  if (!root) {
-    return 'unknown';
-  }
-  const candidate = root === 'derived' && parts.length > 1 ? parts[1] : root;
-  if (root === 'input' || root === 'args') {
-    return 'input';
-  }
-  if (operation.derive.some((step) => isNamedStep(step, candidate))) {
-    return 'derive';
-  }
-  if (operation.compute.some((step) => isNamedStep(step, candidate))) {
-    return 'compute';
-  }
-  return 'unknown';
 }
 
 function normalizeCrossValidation(
@@ -751,7 +710,6 @@ export async function listRuntimeOperations(options: {
           type: inputSpec.type,
           required: inputSpec.required !== false,
           ...(inputSpec.default !== undefined ? { default: cloneJsonLike(inputSpec.default) } : {}),
-          ...(typeof inputSpec.bind_from === 'string' ? { bind_from: inputSpec.bind_from, read_stage: resolveReadStage(inputSpec.bind_from, materialized) } : {}),
           ...(inputSpec.validate ? { validate: cloneJsonLike(inputSpec.validate) } : {}),
         },
       ]),
