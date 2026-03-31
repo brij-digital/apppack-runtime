@@ -38,7 +38,6 @@ type OutputObjectSchemaSpec = {
 type AgentIndexViewSpec = {
   inputs?: Record<string, RuntimeInputSpec>;
   read_output?: ReadOutputSpec;
-  read: Record<string, unknown>;
 };
 
 type AgentComputeSpec = {
@@ -94,7 +93,6 @@ export type MaterializedRuntimeOperation = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  readSpec?: Record<string, unknown>;
   readOutput?: ReadOutputSpec;
   pre?: unknown[];
   post?: unknown[];
@@ -109,7 +107,6 @@ export type RuntimeOperationInputSummary = {
 export type RuntimeOperationSummary = {
   operationId: string;
   operationKind: OperationKind;
-  readKind?: string;
   instruction: string;
   executionKind: 'read' | 'compute' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
@@ -133,7 +130,6 @@ export type RuntimeOperationExplain = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  readSpec?: Record<string, unknown>;
   readOutput?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
@@ -256,7 +252,6 @@ export function materializeRuntimeOperation(
   kind: OperationKind,
 ): MaterializedRuntimeOperation {
   if (kind === 'index_view') {
-    const readSpec = cloneJsonLike((operation as AgentIndexViewSpec).read);
     return {
       kind,
       instruction: '',
@@ -266,7 +261,6 @@ export function materializeRuntimeOperation(
       args: {},
       accounts: {},
       remainingAccounts: [],
-      readSpec,
       readOutput: cloneJsonLike((operation as AgentIndexViewSpec).read_output),
       pre: [],
       post: [],
@@ -474,7 +468,6 @@ export async function listRuntimeOperations(options: {
     operations.push({
       operationId,
       operationKind: kind,
-      ...(typeof materialized.readSpec?.kind === 'string' ? { readKind: materialized.readSpec.kind } : {}),
       instruction: materialized.instruction,
       executionKind: kind === 'contract_write' ? 'write' : kind === 'compute' ? 'compute' : 'read',
       inputs,
@@ -522,7 +515,6 @@ export async function explainRuntimeOperation(options: {
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),
-    ...(materialized.readSpec ? { readSpec: cloneJsonLike(materialized.readSpec) } : {}),
     ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`) ? {
       readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`),
     } : {}),
