@@ -54,9 +54,6 @@ type IndexingSpecShape = {
 
 type AgentRuntimeShape = {
   schema: string;
-  protocol: {
-    protocolId?: string;
-  };
   computes?: Record<string, unknown>;
   contract_writes?: Record<string, unknown>;
 };
@@ -172,9 +169,6 @@ export async function loadProtocolAgentRuntime(protocolId: string): Promise<Agen
   const parsed = await loadJsonByPath<AgentRuntimeShape>(manifest.agentRuntimePath);
   if (parsed.schema !== 'solana-agent-runtime.v1') {
     throw new Error(`Protocol ${protocolId} agent runtime at ${manifest.agentRuntimePath} is not solana-agent-runtime.v1.`);
-  }
-  if (parsed.protocol?.protocolId !== protocolId) {
-    throw new Error(`Protocol ${protocolId} agent runtime protocolId mismatch: ${String(parsed.protocol?.protocolId)}.`);
   }
 
   agentRuntimeCache.set(protocolId, parsed);

@@ -36,9 +36,17 @@ type OutputObjectSchemaSpec = {
   fields: Record<string, OutputFieldSpec>;
 };
 
-type AgentIndexViewSpec = {
+type IndexViewSpec = {
   inputs?: Record<string, RuntimeInputSpec>;
   read_output?: ReadOutputSpec;
+};
+
+type ArgBindingValue = string | number | boolean | null;
+
+type RemainingAccountMeta = {
+  pubkey: string;
+  isSigner?: boolean;
+  isWritable?: boolean;
 };
 
 type AgentComputeSpec = {
@@ -54,9 +62,9 @@ type AgentExecutionSpec = {
   inputs?: Record<string, RuntimeInputSpec>;
   resolve?: unknown[];
   compute?: unknown[];
-  args?: Record<string, unknown>;
-  accounts?: Record<string, unknown>;
-  remaining_accounts?: unknown;
+  args?: Record<string, ArgBindingValue>;
+  accounts?: Record<string, string>;
+  remaining_accounts?: string | RemainingAccountMeta[];
   pre?: unknown[];
   post?: unknown[];
   read_output?: ReadOutputSpec;
@@ -64,19 +72,23 @@ type AgentExecutionSpec = {
 
 export type RuntimePack = {
   schema: 'solana-agent-runtime.v1';
-  protocol: {
-    protocolId: string;
-    programId: string;
-    codamaPath: string;
-  };
-  index_views?: Record<string, AgentIndexViewSpec>;
+  protocolId: string;
+  programId: string;
+  codamaPath: string;
   computes?: Record<string, AgentComputeSpec>;
   contract_writes?: Record<string, AgentExecutionSpec>;
 };
 
-type OperationKind = 'index_view' | 'compute' | 'contract_write';
+type OperationKind = 'compute' | 'contract_write';
 
-type RawOperationSpec = AgentIndexViewSpec | AgentComputeSpec | AgentExecutionSpec;
+type RawOperationSpec = AgentComputeSpec | AgentExecutionSpec;
+
+export type ResolvedIndexViewContract = {
+  protocolId: string;
+  operationId: string;
+  inputs: Record<string, RuntimeInputSpec>;
+  readOutput?: ReadOutputSpec;
+};
 
 export type ResolvedRuntimeOperation = {
   pack: RuntimePack;
@@ -223,38 +235,26 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
   if (!runtime) {
     throw new Error(`Protocol ${protocolId} has no agentRuntimePath.`);
   }
-  const indexing = await loadProtocolIndexingSpec(protocolId);
   if (!manifest.codamaIdlPath) {
     throw new Error(`Protocol ${protocolId} has no codamaIdlPath in registry.`);
   }
-  const parsed = runtime as unknown as RuntimePack;
-  parsed.protocol = {
+  const parsed = runtime as unknown as Omit<RuntimePack, 'protocolId' | 'programId' | 'codamaPath'>;
+  const pack: RuntimePack = {
+    schema: 'solana-agent-runtime.v1',
     protocolId,
     programId: manifest.programId,
     codamaPath: manifest.codamaIdlPath,
+    computes: cloneJsonLike(parsed.computes ?? {}),
+    contract_writes: cloneJsonLike(parsed.contract_writes ?? {}),
   };
-  parsed.index_views = Object.fromEntries(
-    Object.entries(indexing?.operations ?? {})
-      .flatMap(([operationId, operation]) => {
-        const indexView = (operation as { index_view?: AgentIndexViewSpec }).index_view;
-        return indexView ? [[operationId, {
-          ...(indexView.inputs ? { inputs: cloneJsonLike(indexView.inputs) } : {}),
-          ...(indexView.read_output ? { read_output: cloneJsonLike(indexView.read_output) } : {}),
-        } satisfies AgentIndexViewSpec]] : [];
-      }),
-  );
-  runtimePackCache.set(protocolId, parsed);
-  return parsed;
+  runtimePackCache.set(protocolId, pack);
+  return pack;
 }
 
 function getRawOperationSpec(
   pack: RuntimePack,
   operationId: string,
 ): { kind: OperationKind; spec: RawOperationSpec } | null {
-  const indexView = pack.index_views?.[operationId];
-  if (indexView) {
-    return { kind: 'index_view', spec: indexView };
-  }
   const compute = pack.computes?.[operationId];
   if (compute) {
     return { kind: 'compute', spec: compute };
@@ -272,22 +272,6 @@ export function materializeRuntimeOperation(
   pack: RuntimePack,
   kind: OperationKind,
 ): MaterializedRuntimeOperation {
-  if (kind === 'index_view') {
-    return {
-      kind,
-      instruction: '',
-      inputs: cloneJsonLike((operation as AgentIndexViewSpec).inputs ?? {}),
-      resolve: [],
-      compute: [],
-      args: {},
-      accounts: {},
-      remainingAccounts: [],
-      readOutput: cloneJsonLike((operation as AgentIndexViewSpec).read_output),
-      pre: [],
-      post: [],
-    };
-  }
-
   const materialized: MaterializedRuntimeOperation = {
     kind,
     instruction: '',
@@ -304,6 +288,24 @@ export function materializeRuntimeOperation(
   mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentComputeSpec & AgentExecutionSpec>));
 
   return materialized;
+}
+
+export async function resolveIndexViewContract(options: {
+  protocolId: string;
+  operationId: string;
+}): Promise<ResolvedIndexViewContract> {
+  const indexing = await loadProtocolIndexingSpec(options.protocolId);
+  const operation = indexing?.operations?.[options.operationId] as { index_view?: IndexViewSpec } | undefined;
+  const indexView = operation?.index_view;
+  if (!indexView) {
+    throw new Error(`Index view ${options.protocolId}/${options.operationId} not found in indexing spec.`);
+  }
+  return {
+    protocolId: options.protocolId,
+    operationId: options.operationId,
+    inputs: cloneJsonLike(indexView.inputs ?? {}),
+    ...(indexView.read_output ? { readOutput: cloneJsonLike(indexView.read_output) } : {}),
+  };
 }
 
 function normalizeReadOutputSpec(
@@ -418,13 +420,13 @@ function validateRuntimeInputValue(inputName: string, inputSpec: RuntimeInputSpe
   }
 }
 
-export function hydrateAndValidateRuntimeInputs(options: {
+export function hydrateAndValidateInputShape(options: {
   input: Record<string, unknown>;
-  materialized: MaterializedRuntimeOperation;
+  inputs: Record<string, RuntimeInputSpec>;
   context: string;
 }): Record<string, unknown> {
   const hydratedInput: Record<string, unknown> = {};
-  for (const [key, spec] of Object.entries(options.materialized.inputs)) {
+  for (const [key, spec] of Object.entries(options.inputs)) {
     const rawValue = options.input[key] !== undefined ? options.input[key] : spec.default;
     if (rawValue === undefined) {
       if (spec.required !== false) {
@@ -435,6 +437,18 @@ export function hydrateAndValidateRuntimeInputs(options: {
     hydratedInput[key] = validateRuntimeInputValue(key, spec, rawValue, options.context);
   }
   return hydratedInput;
+}
+
+export function hydrateAndValidateRuntimeInputs(options: {
+  input: Record<string, unknown>;
+  materialized: MaterializedRuntimeOperation;
+  context: string;
+}): Record<string, unknown> {
+  return hydrateAndValidateInputShape({
+    input: options.input,
+    inputs: options.materialized.inputs,
+    context: options.context,
+  });
 }
 
 export async function resolveRuntimeOperation(options: {
@@ -490,7 +504,7 @@ export async function listRuntimeOperations(options: {
       operationId,
       operationKind: kind,
       instruction: materialized.instruction,
-      executionKind: kind === 'contract_write' ? 'write' : kind === 'compute' ? 'compute' : 'read',
+      executionKind: kind === 'contract_write' ? 'write' : 'compute',
       inputs,
       ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) ? {
         readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`),
@@ -498,9 +512,6 @@ export async function listRuntimeOperations(options: {
     });
   };
 
-  for (const [operationId, spec] of Object.entries(pack.index_views ?? {})) {
-    pushSummary(operationId, 'index_view', spec, materializeRuntimeOperation(operationId, spec, pack, 'index_view'));
-  }
   for (const [operationId, spec] of Object.entries(pack.computes ?? {})) {
     pushSummary(operationId, 'compute', spec, materializeRuntimeOperation(operationId, spec, pack, 'compute'));
   }

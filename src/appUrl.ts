@@ -1,5 +1,5 @@
 const PROTOCOL_URL_RE = /^[a-zA-Z][a-zA-Z\d+\-.]*:/;
-const IDL_CACHE_BUST_VERSION = 'runtime-0.1.63';
+const IDL_CACHE_BUST_VERSION = 'runtime-0.1.64';
 
 type ImportMetaWithOptionalEnv = ImportMeta & {
   env?: {
