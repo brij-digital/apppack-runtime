@@ -110,7 +110,6 @@ export type RuntimeOperationSummary = {
   operationId: string;
   operationKind: OperationKind;
   readKind?: string;
-  purpose?: string;
   instruction: string;
   executionKind: 'read' | 'compute' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
@@ -476,11 +475,6 @@ export async function listRuntimeOperations(options: {
       operationId,
       operationKind: kind,
       ...(typeof materialized.readSpec?.kind === 'string' ? { readKind: materialized.readSpec.kind } : {}),
-      ...(typeof materialized.readSpec?.description === 'string'
-        ? { purpose: materialized.readSpec.description }
-        : typeof materialized.readSpec?.title === 'string'
-          ? { purpose: materialized.readSpec.title }
-          : {}),
       instruction: materialized.instruction,
       executionKind: kind === 'contract_write' ? 'write' : kind === 'compute' ? 'compute' : 'read',
       inputs,
