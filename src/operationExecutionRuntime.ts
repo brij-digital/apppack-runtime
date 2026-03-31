@@ -134,6 +134,17 @@ export type PreparedMetaOperation = {
     emptyText?: string;
     maxItems?: number;
     itemLabelFields?: string[];
+    objectSchema?: {
+      entity_type?: string;
+      identity_fields?: string[];
+      fields: Record<string, { type: string; required?: boolean; description?: string }>;
+    };
+    itemSchema?: {
+      entity_type?: string;
+      identity_fields?: string[];
+      fields: Record<string, { type: string; required?: boolean; description?: string }>;
+    };
+    scalarType?: string;
   };
   preInstructions: PreparedPreInstruction[];
   postInstructions: PreparedPostInstruction[];
@@ -151,6 +162,17 @@ export type PreparedMetaCompute = {
     emptyText?: string;
     maxItems?: number;
     itemLabelFields?: string[];
+    objectSchema?: {
+      entity_type?: string;
+      identity_fields?: string[];
+      fields: Record<string, { type: string; required?: boolean; description?: string }>;
+    };
+    itemSchema?: {
+      entity_type?: string;
+      identity_fields?: string[];
+      fields: Record<string, { type: string; required?: boolean; description?: string }>;
+    };
+    scalarType?: string;
   };
 };
 
@@ -335,17 +357,29 @@ function normalizeReadOutputSpec(
   if (typeof spec.title === 'string' && spec.title.length > 0) {
     normalized.title = spec.title;
   }
-  if (typeof spec.empty_text === 'string' && spec.empty_text.length > 0) {
-    normalized.emptyText = spec.empty_text;
+  if (typeof (spec.empty_text ?? spec.emptyText) === 'string' && String(spec.empty_text ?? spec.emptyText).length > 0) {
+    normalized.emptyText = String(spec.empty_text ?? spec.emptyText);
   }
-  if (typeof spec.max_items === 'number' && Number.isInteger(spec.max_items) && spec.max_items > 0) {
-    normalized.maxItems = spec.max_items;
+  if (typeof (spec.max_items ?? spec.maxItems) === 'number' && Number.isInteger(spec.max_items ?? spec.maxItems) && Number(spec.max_items ?? spec.maxItems) > 0) {
+    normalized.maxItems = Number(spec.max_items ?? spec.maxItems);
   }
-  if (Array.isArray(spec.item_label_fields)) {
-    const fields = spec.item_label_fields.filter((entry): entry is string => typeof entry === 'string' && entry.length > 0);
+  const itemLabelFields = spec.item_label_fields ?? spec.itemLabelFields;
+  if (Array.isArray(itemLabelFields)) {
+    const fields = itemLabelFields.filter(
+      (entry): entry is string => typeof entry === 'string' && entry.length > 0,
+    );
     if (fields.length > 0) {
       normalized.itemLabelFields = fields;
     }
+  }
+  if (spec.object_schema && typeof spec.object_schema === 'object') {
+    normalized.objectSchema = normalizeRuntimeValue(spec.object_schema) as NonNullable<typeof normalized.objectSchema>;
+  }
+  if (spec.item_schema && typeof spec.item_schema === 'object') {
+    normalized.itemSchema = normalizeRuntimeValue(spec.item_schema) as NonNullable<typeof normalized.itemSchema>;
+  }
+  if (typeof spec.scalar_type === 'string' && spec.scalar_type.length > 0) {
+    normalized.scalarType = spec.scalar_type;
   }
   return normalized;
 }
@@ -622,11 +656,11 @@ export async function prepareRuntimeOperation(options: {
   const protocol = await getProtocolById(options.protocolId);
   const runtime = await loadRuntimePack(options.protocolId);
   const idl = await loadProtocolIdl(options.protocolId);
-  const operationSpec = runtime.executions?.[options.operationId];
+  const operationSpec = runtime.contract_writes?.[options.operationId];
   if (!operationSpec) {
-    throw new Error(`Execution ${options.operationId} not found in agent runtime pack for ${options.protocolId}.`);
+    throw new Error(`Contract write ${options.operationId} not found in agent runtime pack for ${options.protocolId}.`);
   }
-  const operation = materializeRuntimeOperation(options.operationId, operationSpec, runtime, 'execution');
+  const operation = materializeRuntimeOperation(options.operationId, operationSpec, runtime, 'contract_write');
   const hydratedInput: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(operation.inputs)) {
     if (options.input[key] !== undefined) {

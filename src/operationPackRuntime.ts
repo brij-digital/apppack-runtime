@@ -50,9 +50,24 @@ type ReadOutputSpec = {
   maxItems?: number;
   item_label_fields?: string[];
   itemLabelFields?: string[];
+  object_schema?: OutputObjectSchemaSpec;
+  item_schema?: OutputObjectSchemaSpec;
+  scalar_type?: string;
 };
 
-type AgentIndexReadSpec = {
+type OutputFieldSpec = {
+  type: string;
+  required?: boolean;
+  description?: string;
+};
+
+type OutputObjectSchemaSpec = {
+  entity_type?: string;
+  identity_fields?: string[];
+  fields: Record<string, OutputFieldSpec>;
+};
+
+type AgentIndexViewSpec = {
   inputs?: Record<string, RuntimeInputSpec>;
   validate?: {
     cross?: Array<{
@@ -115,17 +130,15 @@ export type RuntimePack = {
   };
   navigation?: Record<string, unknown>;
   sources?: Record<string, unknown>;
-  reads?: {
-    index?: Record<string, AgentIndexReadSpec>;
-  };
+  index_views?: Record<string, AgentIndexViewSpec>;
   computes?: Record<string, AgentComputeSpec>;
-  executions?: Record<string, AgentExecutionSpec>;
+  contract_writes?: Record<string, AgentExecutionSpec>;
   templates?: Record<string, TemplateSpec>;
 };
 
-type OperationKind = 'index_read' | 'compute' | 'execution';
+type OperationKind = 'index_view' | 'compute' | 'contract_write';
 
-type RawOperationSpec = AgentIndexReadSpec | AgentComputeSpec | AgentExecutionSpec;
+type RawOperationSpec = AgentIndexViewSpec | AgentComputeSpec | AgentExecutionSpec;
 
 export type MaterializedRuntimeOperation = {
   kind: OperationKind;
@@ -160,6 +173,8 @@ export type RuntimeOperationInputSummary = {
 export type RuntimeOperationSummary = {
   operationId: string;
   operationKind: OperationKind;
+  readKind?: string;
+  purpose?: string;
   instruction: string;
   executionKind: 'read' | 'compute' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
@@ -176,6 +191,9 @@ export type RuntimeOperationSummary = {
     emptyText?: string;
     maxItems?: number;
     itemLabelFields?: string[];
+    objectSchema?: OutputObjectSchemaSpec;
+    itemSchema?: OutputObjectSchemaSpec;
+    scalarType?: string;
   };
 };
 
@@ -201,6 +219,9 @@ export type RuntimeOperationExplain = {
     emptyText?: string;
     maxItems?: number;
     itemLabelFields?: string[];
+    objectSchema?: OutputObjectSchemaSpec;
+    itemSchema?: OutputObjectSchemaSpec;
+    scalarType?: string;
   };
   pre: unknown[];
   post: unknown[];
@@ -347,17 +368,17 @@ function getRawOperationSpec(
   pack: RuntimePack,
   operationId: string,
 ): { kind: OperationKind; spec: RawOperationSpec } | null {
-  const indexRead = pack.reads?.index?.[operationId];
-  if (indexRead) {
-    return { kind: 'index_read', spec: indexRead };
+  const indexView = pack.index_views?.[operationId];
+  if (indexView) {
+    return { kind: 'index_view', spec: indexView };
   }
   const compute = pack.computes?.[operationId];
   if (compute) {
     return { kind: 'compute', spec: compute };
   }
-  const execution = pack.executions?.[operationId];
+  const execution = pack.contract_writes?.[operationId];
   if (execution) {
-    return { kind: 'execution', spec: execution };
+    return { kind: 'contract_write', spec: execution };
   }
   return null;
 }
@@ -368,19 +389,19 @@ export function materializeRuntimeOperation(
   pack: RuntimePack,
   kind: OperationKind,
 ): MaterializedRuntimeOperation {
-  if (kind === 'index_read') {
-    const readSpec = cloneJsonLike((operation as AgentIndexReadSpec).read);
+  if (kind === 'index_view') {
+    const readSpec = cloneJsonLike((operation as AgentIndexViewSpec).read);
     return {
       kind,
       instruction: '',
-      inputs: cloneJsonLike((operation as AgentIndexReadSpec).inputs ?? {}),
+      inputs: cloneJsonLike((operation as AgentIndexViewSpec).inputs ?? {}),
       derive: [],
       compute: [],
       args: {},
       accounts: {},
       remainingAccounts: [],
       readSpec,
-      readOutput: cloneJsonLike((operation as AgentIndexReadSpec).read_output),
+      readOutput: cloneJsonLike((operation as AgentIndexViewSpec).read_output),
       pre: [],
       post: [],
     };
@@ -442,6 +463,9 @@ function normalizeReadOutputSpec(
       emptyText?: string;
       maxItems?: number;
       itemLabelFields?: string[];
+      objectSchema?: OutputObjectSchemaSpec;
+      itemSchema?: OutputObjectSchemaSpec;
+      scalarType?: string;
     }
   | undefined {
   if (!spec) {
@@ -467,6 +491,9 @@ function normalizeReadOutputSpec(
           ),
         }
       : {}),
+    ...(spec.object_schema ? { objectSchema: cloneJsonLike(spec.object_schema) } : {}),
+    ...(spec.item_schema ? { itemSchema: cloneJsonLike(spec.item_schema) } : {}),
+    ...(typeof spec.scalar_type === 'string' && spec.scalar_type.length > 0 ? { scalarType: spec.scalar_type } : {}),
   };
 }
 
@@ -543,11 +570,17 @@ export async function listRuntimeOperations(options: {
     operations.push({
       operationId,
       operationKind: kind,
+      ...(typeof materialized.readSpec?.kind === 'string' ? { readKind: materialized.readSpec.kind } : {}),
+      ...(typeof materialized.readSpec?.description === 'string'
+        ? { purpose: materialized.readSpec.description }
+        : typeof materialized.readSpec?.title === 'string'
+          ? { purpose: materialized.readSpec.title }
+          : {}),
       instruction: materialized.instruction,
-      executionKind: kind === 'execution' ? 'write' : kind === 'compute' ? 'compute' : 'read',
+      executionKind: kind === 'contract_write' ? 'write' : kind === 'compute' ? 'compute' : 'read',
       inputs,
-      ...(normalizeCrossValidation((spec as AgentIndexReadSpec | AgentComputeSpec | AgentExecutionSpec).validate) ? {
-        crossValidation: normalizeCrossValidation((spec as AgentIndexReadSpec | AgentComputeSpec | AgentExecutionSpec).validate),
+      ...(normalizeCrossValidation((spec as AgentIndexViewSpec | AgentComputeSpec | AgentExecutionSpec).validate) ? {
+        crossValidation: normalizeCrossValidation((spec as AgentIndexViewSpec | AgentComputeSpec | AgentExecutionSpec).validate),
       } : {}),
       ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) ? {
         readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`),
@@ -555,14 +588,14 @@ export async function listRuntimeOperations(options: {
     });
   };
 
-  for (const [operationId, spec] of Object.entries(pack.reads?.index ?? {})) {
-    pushSummary(operationId, 'index_read', spec, materializeRuntimeOperation(operationId, spec, pack, 'index_read'));
+  for (const [operationId, spec] of Object.entries(pack.index_views ?? {})) {
+    pushSummary(operationId, 'index_view', spec, materializeRuntimeOperation(operationId, spec, pack, 'index_view'));
   }
   for (const [operationId, spec] of Object.entries(pack.computes ?? {})) {
     pushSummary(operationId, 'compute', spec, materializeRuntimeOperation(operationId, spec, pack, 'compute'));
   }
-  for (const [operationId, spec] of Object.entries(pack.executions ?? {})) {
-    pushSummary(operationId, 'execution', spec, materializeRuntimeOperation(operationId, spec, pack, 'execution'));
+  for (const [operationId, spec] of Object.entries(pack.contract_writes ?? {})) {
+    pushSummary(operationId, 'contract_write', spec, materializeRuntimeOperation(operationId, spec, pack, 'contract_write'));
   }
 
   operations.sort((a, b) => a.operationId.localeCompare(b.operationId));
