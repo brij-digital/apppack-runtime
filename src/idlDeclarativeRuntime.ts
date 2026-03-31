@@ -660,7 +660,8 @@ export async function sendIdlInstruction(options: {
   postInstructions?: TransactionInstruction[];
   connection: Connection;
   wallet: WalletContextState;
-  onStatus?: (status: 'preparing' | 'simulating' | 'awaiting_wallet_approval' | 'submitting' | 'confirming' | 'confirmed') => void;
+  onStatus?: (status: 'preparing' | 'simulating' | 'awaiting_wallet_approval' | 'submitting' | 'submitted' | 'confirming' | 'confirmed') => void;
+  onSubmitted?: (payload: { signature: string; explorerUrl: string }) => void;
 }): Promise<{ signature: string; explorerUrl: string }> {
   if (!options.wallet.signTransaction) {
     throw new Error('Connected wallet does not support transaction signing.');
@@ -683,6 +684,9 @@ export async function sendIdlInstruction(options: {
     skipPreflight: false,
     maxRetries: 3,
   });
+  const explorerUrl = `https://solscan.io/tx/${signature}`;
+  options.onSubmitted?.({ signature, explorerUrl });
+  options.onStatus?.('submitted');
 
   options.onStatus?.('confirming');
   await options.connection.confirmTransaction(
@@ -698,7 +702,7 @@ export async function sendIdlInstruction(options: {
 
   return {
     signature,
-    explorerUrl: `https://solscan.io/tx/${signature}`,
+    explorerUrl,
   };
 }
 
