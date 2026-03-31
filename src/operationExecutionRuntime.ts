@@ -623,7 +623,7 @@ async function runDiscoverStep(step: DiscoverStep, ctx: ResolverContext): Promis
   const rawStep = asRecord(normalizeRuntimeValue(step), `discover:${step.name}`);
   const discover = asString(rawStep.discover, `discover:${step.name}:discover`);
   const resolvedStep =
-    discover === 'discover.query' || discover === 'discover.pick_list_item_by_value'
+    discover === 'discover.pick_list_item_by_value'
       ? rawStep
       : asRecord(normalizeRuntimeValue(resolveTemplateValue(step, ctx.scope)), `discover:${step.name}`);
   return runRegisteredDiscoverStep(

@@ -1,6 +1,6 @@
 {
   "name": "@brij-digital/apppack-runtime",
-  "version": "0.1.44",
+  "version": "0.1.45",
   "type": "module",
   "repository": {
     "type": "git",
@@ -41,11 +41,13 @@
     "./schemas/*": "./schemas/*"
   },
   "scripts": {
+    "npmrc:check": "node scripts/check-local-npmrc.mjs",
     "build": "rm -rf dist && tsc -p tsconfig.json",
     "check": "tsc --noEmit -p tsconfig.json",
     "schemas:check": "node scripts/check-shared-schemas.mjs",
-    "test": "npm run build && node --test test/**/*.test.mjs",
-    "prepare": "npm run build"
+    "test": "npm run npmrc:check && npm run build && node --test test/**/*.test.mjs",
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run npmrc:check"
   },
   "publishConfig": {
     "registry": "https://npm.pkg.github.com"

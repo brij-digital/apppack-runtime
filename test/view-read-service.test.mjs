@@ -10,6 +10,7 @@ import { AppPackViewReadService } from '../dist/node/view-read-service.js';
 import { DirectAccountsCoder } from '../dist/index.js';
 
 const PROGRAM_ID = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
+const POOL_PUBKEY = 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE';
 const MINT_USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const MINT_SOL = 'So11111111111111111111111111111111111111112';
 
@@ -53,80 +54,39 @@ const RUNTIME = {
     programId: PROGRAM_ID,
     codamaPath: '/idl/orca_whirlpool.codama.json',
   },
+  navigation: {
+    entities: {},
+    entrypoints: {},
+    relations: [],
+    recipes: {},
+  },
   reads: {
-    contract: {},
-    index: {
-      list_pools: {
+    contract: {
+      whirlpool_snapshot: {
         inputs: {
-          token_in_mint: { type: 'pubkey', required: true },
-          token_out_mint: { type: 'pubkey', required: true },
-          min_last_seen_slot: { type: 'u64', required: false, default: '0' },
-        },
-        read_output: {
-          type: 'array',
-          source: '$derived.items',
-          max_items: 20,
+          pool: { type: 'pubkey', required: true },
         },
         read: {
-          kind: 'search',
-          source_kind: 'account_changes',
-          entity_type: 'whirlpool_pool',
-          bootstrap: {
-            kind: 'scan_accounts',
-            source: 'rpc.getProgramAccounts',
-            program_id: '$protocol.programId',
+          kind: 'account',
+          target: {
+            address: '$input.pool',
             account_type: 'Whirlpool',
-            filters: [],
           },
-          query: {
-            indexed_filters: {
-              any: [
-                {
-                  all: [
-                    { field: 'memcmp.8', op: '=', value: '$input.token_in_mint' },
-                    { field: 'memcmp.40', op: '=', value: '$input.token_out_mint' },
-                  ],
-                },
-                {
-                  all: [
-                    { field: 'memcmp.8', op: '=', value: '$input.token_out_mint' },
-                    { field: 'memcmp.40', op: '=', value: '$input.token_in_mint' },
-                  ],
-                },
-              ],
-            },
-            filters: {
-              all: [
-                { field: 'account.lastSeenSlot', op: '>=', value: '$input.min_last_seen_slot' },
-                { field: 'decoded.liquidity', op: '>', value: '0' },
-              ],
-            },
-            decode: {
-              account_type: 'Whirlpool',
-            },
-            sort: [{ field: 'decoded.liquidity', dir: 'desc', mode: 'indexed_then_live_refine', candidate_limit: 20 }],
-            limit: 20,
-            select: {
-              whirlpool: '$account.pubkey',
-              tokenMintA: '$decoded.token_mint_a',
-              tokenMintB: '$decoded.token_mint_b',
-              tickSpacing: '$decoded.tick_spacing',
-              liquidity: '$decoded.liquidity',
-            },
+          select: {
+            pool: '$account.pubkey',
+            tokenMintA: '$decoded.token_mint_a',
+            tokenMintB: '$decoded.token_mint_b',
+            tickSpacing: '$decoded.tick_spacing',
+            liquidity: '$decoded.liquidity',
           },
         },
       },
     },
+    index: {},
   },
+  computes: {},
+  executions: {},
 };
-
-async function writeTempJson(prefix, value) {
-  const dir = path.join(os.tmpdir(), `apppack-runtime-test-${randomUUID()}`);
-  await fs.mkdir(dir, { recursive: true });
-  const file = path.join(dir, `${prefix}.json`);
-  await fs.writeFile(file, JSON.stringify(value, null, 2), 'utf8');
-  return file;
-}
 
 async function writeTempRuntimeWithCodama(prefix, runtimeValue, codamaValue) {
   const dir = path.join(os.tmpdir(), `apppack-runtime-test-${randomUUID()}`);
@@ -139,42 +99,31 @@ async function writeTempRuntimeWithCodama(prefix, runtimeValue, codamaValue) {
   return runtimePath;
 }
 
-test('runRead queries cached_program_accounts via runtime search view and returns sorted selected rows', async () => {
-  const metaPath = await writeTempRuntimeWithCodama('runtime', RUNTIME, CODAMA);
+test('runRead resolves a targeted contract read from cached_program_accounts', async () => {
+  const runtimePath = await writeTempRuntimeWithCodama('runtime', RUNTIME, CODAMA);
   const coder = new DirectAccountsCoder(CODAMA);
 
-  const dataA = await coder.encode('Whirlpool', {
+  const data = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
     token_mint_b: new PublicKey(MINT_SOL),
     tick_spacing: 4,
     liquidity: new BN('1000000'),
   });
-  const dataB = await coder.encode('Whirlpool', {
-    token_mint_a: new PublicKey(MINT_SOL),
-    token_mint_b: new PublicKey(MINT_USDC),
-    tick_spacing: 16,
-    liquidity: new BN('2000000'),
-  });
 
-  const capturedQueries = [];
   const pool = {
-    async query(sql, params) {
-      capturedQueries.push({ sql: String(sql), params: params ?? [] });
+    async query(sql) {
       if (String(sql).includes('FROM cached_program_accounts')) {
         return {
           rows: [
             {
-              pubkey: 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE',
+              pubkey: POOL_PUBKEY,
               slot: '202532154',
-              data_bytes: Buffer.from(dataA),
-            },
-            {
-              pubkey: '2sZ7dw8Nfqn8mQ9QGp2PzFpvx9TLtCrzkx5hDfSE9iJY',
-              slot: '202532160',
-              data_bytes: Buffer.from(dataB),
+              first_seen_slot: '202532000',
+              last_seen_slot: '202532154',
+              data_bytes: Buffer.from(data),
             },
           ],
-          rowCount: 2,
+          rowCount: 1,
         };
       }
       return { rows: [], rowCount: 0 };
@@ -188,97 +137,73 @@ test('runRead queries cached_program_accounts via runtime search view and return
     poolOverride: pool,
     cacheTtlMs: 1000,
     protocolId: 'orca-whirlpool-mainnet',
-    runtimePath: metaPath,
+    runtimePath,
     programId: PROGRAM_ID,
-    operationId: 'list_pools',
+    operationId: 'whirlpool_snapshot',
   });
 
   const result = await service.runRead({
-    input: {
-      token_in_mint: MINT_USDC,
-      token_out_mint: MINT_SOL,
-      min_last_seen_slot: '0',
-    },
-    limit: 20,
+    input: { pool: POOL_PUBKEY },
+    limit: 1,
   });
 
-  assert.equal(result.items.length, 2);
-  assert.equal(result.items[0].liquidity, '2000000');
-  assert.equal(result.items[1].liquidity, '1000000');
-  assert.equal(result.items[0].whirlpool, '2sZ7dw8Nfqn8mQ9QGp2PzFpvx9TLtCrzkx5hDfSE9iJY');
-
-  const memcmpQuery = capturedQueries.find((entry) => entry.sql.includes('FROM cached_program_accounts'));
-  assert.ok(memcmpQuery, 'expected memcmp query against cached_program_accounts');
-  assert.ok(memcmpQuery.sql.includes('substring(data_bytes from'));
-  assert.ok(memcmpQuery.sql.includes("decode($"));
-  assert.ok(memcmpQuery.sql.includes(' OR '));
-
-  const tokenInHex = new PublicKey(MINT_USDC).toBuffer().toString('hex');
-  const tokenOutHex = new PublicKey(MINT_SOL).toBuffer().toString('hex');
-  const serializedParams = JSON.stringify(memcmpQuery.params);
-  assert.ok(serializedParams.includes(tokenInHex));
-  assert.ok(serializedParams.includes(tokenOutHex));
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.items[0], {
+    pool: POOL_PUBKEY,
+    tokenMintA: MINT_USDC,
+    tokenMintB: MINT_SOL,
+    tickSpacing: '4',
+    liquidity: '1000000',
+  });
 
   await service.close();
 });
 
-test('syncFullToDatabase bootstraps cached_program_accounts for runtime search views', async () => {
-  const metaPath = await writeTempRuntimeWithCodama('runtime-bootstrap', RUNTIME, CODAMA);
+test('runRead falls back to RPC account fetch for targeted contract reads', async () => {
+  const runtimePath = await writeTempRuntimeWithCodama('runtime-rpc', RUNTIME, CODAMA);
   const coder = new DirectAccountsCoder(CODAMA);
+
   const data = await coder.encode('Whirlpool', {
     token_mint_a: new PublicKey(MINT_USDC),
     token_mint_b: new PublicKey(MINT_SOL),
     tick_spacing: 16,
-    liquidity: new BN('123456'),
+    liquidity: new BN('2000000'),
   });
 
-  const queries = [];
-  const pool = {
-    async query(sql, params) {
-      queries.push({ sql: String(sql), params: params ?? [] });
-      return { rows: [{ pubkey: 'Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE' }], rowCount: 1 };
-    },
-    async end() {},
-  };
-
   const connection = {
-    async getProgramAccounts() {
-      return [
-        {
-          pubkey: new PublicKey('Czfq3xZZDmsdGdUyrNLtRhGc47cXcZtLG4crryfu44zE'),
-          account: {
-            data: Buffer.from(data),
-            executable: false,
-            lamports: 5000,
-            owner: new PublicKey(PROGRAM_ID),
-            rentEpoch: BigInt(0),
-          },
-        },
-      ];
-    },
-    async getSlot() {
-      return 202532154;
+    async getAccountInfo(pubkey) {
+      assert.equal(pubkey.toBase58(), POOL_PUBKEY);
+      return {
+        data: Buffer.from(data),
+        executable: false,
+        lamports: 1,
+        owner: new PublicKey(PROGRAM_ID),
+        rentEpoch: BigInt(0),
+      };
     },
   };
 
   const service = new AppPackViewReadService({
-    connection,
+    connection: connection,
     databaseUrl: null,
-    poolOverride: pool,
     cacheTtlMs: 1000,
     protocolId: 'orca-whirlpool-mainnet',
-    runtimePath: metaPath,
+    runtimePath,
     programId: PROGRAM_ID,
-    operationId: 'list_pools',
+    operationId: 'whirlpool_snapshot',
   });
 
-  const result = await service.syncFullToDatabase();
-  assert.equal(result?.totalAccounts, 1);
-  assert.equal(result?.upserted, 1);
-  assert.equal(result?.slot, 202532154);
+  const result = await service.runRead({
+    input: { pool: POOL_PUBKEY },
+    limit: 1,
+  });
 
-  const insertQuery = queries.find((entry) => entry.sql.includes('INSERT INTO cached_program_accounts'));
-  assert.ok(insertQuery, 'expected bootstrap insert into cached_program_accounts');
-
-  await service.close();
+  assert.equal(result.items.length, 1);
+  assert.deepEqual(result.items[0], {
+    pool: POOL_PUBKEY,
+    tokenMintA: MINT_USDC,
+    tokenMintB: MINT_SOL,
+    tickSpacing: '16',
+    liquidity: '2000000',
+  });
 });
