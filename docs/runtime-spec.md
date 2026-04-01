@@ -86,17 +86,12 @@ No other top-level attributes are allowed.
 ### `inputSpec`
 
 Used only inside `reads[*].inputs`.
+These declarations are type-only.
 
 Attributes:
 - `type`
   - required
   - string
-- `required`
-  - optional
-  - boolean
-- `default`
-  - optional
-  - any JSON value
 
 ### `outputFieldSpec`
 

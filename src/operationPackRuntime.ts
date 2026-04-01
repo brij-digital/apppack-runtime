@@ -17,8 +17,6 @@ type JsonRecord = Record<string, unknown>;
 
 type RuntimeInputSpec = {
   type: string;
-  required?: boolean;
-  default?: unknown;
   example?: unknown;
   ui_example?: unknown;
 };
@@ -120,8 +118,6 @@ export type MaterializedRuntimeOperation = {
 
 export type RuntimeOperationInputSummary = {
   type: string;
-  required: boolean;
-  default?: unknown;
 };
 
 export type RuntimeOperationSummary = {
@@ -317,10 +313,6 @@ function codamaTypeToRuntimeType(type: CodamaTypeRef | unknown): string {
   return 'json';
 }
 
-function isOptionalCodamaType(type: CodamaTypeRef | unknown): boolean {
-  return Boolean(type && typeof type === 'object' && 'option' in type);
-}
-
 function buildWriteInputSpecFromCodamaRef(options: {
   protocolId: string;
   operationId: string;
@@ -333,7 +325,6 @@ function buildWriteInputSpecFromCodamaRef(options: {
   if (arg && toSnakeCase(arg.name) !== 'discriminator') {
     return {
       type: codamaTypeToRuntimeType(arg.type),
-      required: !isOptionalCodamaType(arg.type),
     };
   }
 
@@ -346,7 +337,6 @@ function buildWriteInputSpecFromCodamaRef(options: {
     }
     return {
       type: 'pubkey',
-      required: !(account.optional ?? false),
     };
   }
 
@@ -636,11 +626,8 @@ export function hydrateAndValidateInputShape(options: {
 }): Record<string, unknown> {
   const hydratedInput: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(options.inputs)) {
-    const rawValue = options.input[key] !== undefined ? options.input[key] : spec.default;
+    const rawValue = options.input[key];
     if (rawValue === undefined) {
-      if (spec.required !== false) {
-        throw new Error(`Missing required runtime input: ${key}`);
-      }
       continue;
     }
     hydratedInput[key] = validateRuntimeInputValue(key, spec, rawValue, options.context);
@@ -704,8 +691,6 @@ export async function listRuntimeOperations(options: {
         inputName,
         {
           type: inputSpec.type,
-          required: inputSpec.required !== false,
-          ...(inputSpec.default !== undefined ? { default: cloneJsonLike(inputSpec.default) } : {}),
         },
       ]),
     );
