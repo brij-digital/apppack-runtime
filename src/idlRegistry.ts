@@ -32,7 +32,7 @@ type RuntimeInputSpec = {
 };
 
 type ReadOutputSpec = {
-  type: 'array' | 'object' | 'scalar' | 'list';
+  type: 'array' | 'object' | 'scalar';
   source: string;
   object_schema?: Record<string, unknown>;
   item_schema?: Record<string, unknown>;
@@ -54,7 +54,7 @@ type IndexingSpecShape = {
 
 type AgentRuntimeShape = {
   schema: string;
-  reads?: Record<string, unknown>;
+  views?: Record<string, unknown>;
   writes?: Record<string, unknown>;
   transforms?: Record<string, unknown>;
 };

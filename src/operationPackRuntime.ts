@@ -24,7 +24,7 @@ type RuntimeInputSpec = {
 type RuntimeInputDecl = string | RuntimeInputSpec;
 
 type ReadOutputSpec = {
-  type: 'array' | 'object' | 'scalar' | 'list';
+  type: 'array' | 'object' | 'scalar';
   source: string;
   object_schema?: OutputObjectSchemaSpec;
   item_schema?: OutputObjectSchemaSpec;
@@ -55,7 +55,7 @@ type RemainingAccountMeta = {
   isWritable?: boolean;
 };
 
-type AgentReadSpec = {
+type AgentViewSpec = {
   inputs?: Record<string, RuntimeInputDecl>;
   load?: unknown[];
   transform?: string[];
@@ -79,14 +79,14 @@ export type RuntimePack = {
   protocolId: string;
   programId: string;
   codamaPath: string;
-  reads?: Record<string, AgentReadSpec>;
+  views?: Record<string, AgentViewSpec>;
   writes?: Record<string, AgentWriteSpec>;
   transforms?: Record<string, unknown[]>;
 };
 
-type OperationKind = 'read' | 'write';
+type OperationKind = 'view' | 'write';
 
-type RawOperationSpec = AgentReadSpec | AgentWriteSpec;
+type RawOperationSpec = AgentViewSpec | AgentWriteSpec;
 
 export type ResolvedIndexViewContract = {
   protocolId: string;
@@ -104,7 +104,7 @@ export type ResolvedRuntimeOperation = {
 
 export type MaterializedRuntimeOperation = {
   kind: OperationKind;
-  instruction: string;
+  instruction: string | null;
   inputs: Record<string, RuntimeInputSpec>;
   load: unknown[];
   transform: unknown[];
@@ -124,10 +124,10 @@ export type RuntimeOperationSummary = {
   operationId: string;
   operationKind: OperationKind;
   instruction?: string;
-  executionKind: 'read' | 'write';
+  executionKind: 'view' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
   output?: {
-    type: 'array' | 'object' | 'scalar' | 'list';
+    type: 'array' | 'object' | 'scalar';
     source: string;
     objectSchema?: OutputObjectSchemaSpec;
     itemSchema?: OutputObjectSchemaSpec;
@@ -147,7 +147,7 @@ export type RuntimeOperationExplain = {
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
   output?: {
-    type: 'array' | 'object' | 'scalar' | 'list';
+    type: 'array' | 'object' | 'scalar';
     source: string;
     objectSchema?: OutputObjectSchemaSpec;
     itemSchema?: OutputObjectSchemaSpec;
@@ -197,7 +197,7 @@ function resolvePath(scope: JsonRecord, path: string): unknown {
 
 function mergeMaterializedFragment(
   target: MaterializedRuntimeOperation,
-  fragment: Partial<AgentReadSpec & AgentWriteSpec>,
+  fragment: Partial<AgentViewSpec & AgentWriteSpec>,
 ): void {
   if ('instruction' in fragment && fragment.instruction) {
     target.instruction = fragment.instruction;
@@ -445,7 +445,7 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
     protocolId,
     programId: manifest.programId,
     codamaPath: manifest.codamaIdlPath,
-    reads: cloneJsonLike(parsed.reads ?? {}),
+    views: cloneJsonLike((parsed as { views?: Record<string, AgentViewSpec> }).views ?? {}),
     writes,
     transforms,
   };
@@ -457,9 +457,9 @@ function getRawOperationSpec(
   pack: RuntimePack,
   operationId: string,
 ): { kind: OperationKind; spec: RawOperationSpec } | null {
-  const read = pack.reads?.[operationId];
-  if (read) {
-    return { kind: 'read', spec: read };
+  const view = pack.views?.[operationId];
+  if (view) {
+    return { kind: 'view', spec: view };
   }
   const write = pack.writes?.[operationId];
   if (write) {
@@ -476,7 +476,7 @@ export function materializeRuntimeOperation(
 ): MaterializedRuntimeOperation {
   const materialized: MaterializedRuntimeOperation = {
     kind,
-    instruction: '',
+    instruction: null,
     inputs: {},
     load: [],
     transform: [],
@@ -487,7 +487,7 @@ export function materializeRuntimeOperation(
     post: [],
   };
 
-  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentReadSpec & AgentWriteSpec>));
+  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentViewSpec & AgentWriteSpec>));
   const transformRefs = cloneJsonLike(materialized.transform) as string[];
   materialized.transform = expandTransformPipeline({
     protocolId: pack.protocolId,
@@ -522,7 +522,7 @@ function normalizeOutputSpec(
   context: string,
 ):
   | {
-      type: 'array' | 'object' | 'scalar' | 'list';
+      type: 'array' | 'object' | 'scalar';
       source: string;
       objectSchema?: OutputObjectSchemaSpec;
       itemSchema?: OutputObjectSchemaSpec;
@@ -716,8 +716,8 @@ export async function listRuntimeOperations(options: {
     });
   };
 
-  for (const [operationId, spec] of Object.entries(pack.reads ?? {})) {
-    pushSummary(operationId, 'read', spec, materializeRuntimeOperation(operationId, spec, pack, 'read'));
+  for (const [operationId, spec] of Object.entries(pack.views ?? {})) {
+    pushSummary(operationId, 'view', spec, materializeRuntimeOperation(operationId, spec, pack, 'view'));
   }
   for (const [operationId, spec] of Object.entries(pack.writes ?? {})) {
     pushSummary(operationId, 'write', spec, materializeRuntimeOperation(operationId, spec, pack, 'write'));

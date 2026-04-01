@@ -34,7 +34,7 @@ Examples:
 This file is authored by the protocol pack maintainer.
 
 What the maintainer provides there:
-- named `reads`
+- named `views`
 - named `writes`
 - named reusable `transforms`
 - exact read input contracts
@@ -56,7 +56,7 @@ Required top-level keys:
 {
   "$schema": "/idl/solana_agent_runtime.schema.v1.json",
   "schema": "solana-agent-runtime.v1",
-  "reads": {},
+  "views": {},
   "writes": {},
   "transforms": {}
 }
@@ -69,9 +69,9 @@ Top-level attributes:
 - `schema`
   - required
   - must be `solana-agent-runtime.v1`
-- `reads`
+- `views`
   - required
-  - object map from operation id to `readSpec`
+  - object map from operation id to `viewSpec`
 - `writes`
   - required
   - object map from operation id to `writeSpec`
@@ -83,7 +83,7 @@ No other top-level attributes are allowed.
 
 ## Shared operation core
 
-Both `readSpec` and `writeSpec` share the same preparation phase:
+Both `viewSpec` and `writeSpec` share the same preparation phase:
 
 - `load`
   - optional
@@ -97,9 +97,9 @@ This shared shape is intentional:
 - both may need to load extra runtime state
 - both may need deterministic derived values before they diverge
 
-## `readSpec`
+## `viewSpec`
 
-A read operation has these attributes:
+A view operation has these attributes:
 
 - `inputs`
   - optional
@@ -110,7 +110,7 @@ A read operation has these attributes:
 
 ## Read Output Types
 
-These types are used only by `reads[*].output`.
+These types are used only by `views[*].output`.
 
 ### `outputFieldSpec`
 
@@ -131,7 +131,7 @@ Typed output contract for a read operation.
 Attributes:
 - `type`
   - required
-  - one of: `array`, `object`, `scalar`, `list`
+  - one of: `array`, `object`, `scalar`
 - `source`
   - required
   - runtime expression string
@@ -140,7 +140,7 @@ Attributes:
   - object schema for `type = object`
 - `item_schema`
   - optional
-  - object schema for `type = array` or `list`
+  - object schema for `type = array`
 - `scalar_type`
   - optional
   - scalar type string for `type = scalar`
@@ -198,7 +198,7 @@ Example:
       }
     ]
   },
-  "reads": {
+  "views": {
     "quote_exact_in": {
       "load": [],
       "transform": ["swap_direction"]
@@ -527,7 +527,7 @@ Put logic in Codama when it is:
 
 Put logic in the runtime spec when it is:
 - deterministic protocol-specific transform
-- reusable deterministic transform fragments shared by reads and writes
+- reusable deterministic transform fragments shared by views and writes
 - dynamic value materialization for a write
 - small transaction-envelope logic around a write
 

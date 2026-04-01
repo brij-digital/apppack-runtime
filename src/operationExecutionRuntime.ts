@@ -126,7 +126,7 @@ export type PreparedMetaOperation = {
   remainingAccounts: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   derived: Record<string, unknown>;
   output?: {
-    type: 'array' | 'object' | 'scalar' | 'list';
+    type: 'array' | 'object' | 'scalar';
     source: string;
     objectSchema?: {
       entity_type?: string;
@@ -144,13 +144,13 @@ export type PreparedMetaOperation = {
   postInstructions: PreparedPostInstruction[];
 };
 
-export type PreparedMetaRead = {
+export type PreparedMetaView = {
   protocolId: string;
   operationId: string;
   derived: Record<string, unknown>;
   output: unknown;
   outputSpec?: {
-    type: 'array' | 'object' | 'scalar' | 'list';
+    type: 'array' | 'object' | 'scalar';
     source: string;
     objectSchema?: {
       entity_type?: string;
@@ -610,20 +610,20 @@ export async function prepareRuntimeOperation(options: {
   };
 }
 
-export async function runRuntimeRead(options: {
+export async function runRuntimeView(options: {
   protocolId: string;
   operationId: string;
   input: Record<string, unknown>;
   connection: Connection;
   walletPublicKey: PublicKey;
-}): Promise<PreparedMetaRead> {
+}): Promise<PreparedMetaView> {
   const protocol = await getProtocolById(options.protocolId);
   const resolved = await resolveRuntimeOperation({
     protocolId: options.protocolId,
     operationId: options.operationId,
   });
-  if (resolved.kind !== 'read') {
-    throw new Error(`Operation ${options.operationId} is not a read capability.`);
+  if (resolved.kind !== 'view') {
+    throw new Error(`Operation ${options.operationId} is not a view capability.`);
   }
   const runtime = resolved.pack;
   const idl = await loadProtocolIdl(options.protocolId);
