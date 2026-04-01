@@ -58,7 +58,9 @@ The current pack split is:
 
 The runtime package owns only the third layer plus the shared loading logic around all three.
 
-For a concrete description of the runtime layer, see [docs/runtime-spec.md](docs/runtime-spec.md).
+For a concrete description of the runtime layer, see:
+- [docs/runtime-spec.md](docs/runtime-spec.md)
+- [docs/indexing-spec.md](docs/indexing-spec.md)
 
 ## Exports
 
