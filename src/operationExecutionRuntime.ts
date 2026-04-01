@@ -24,13 +24,13 @@ const DEFAULT_ASSOCIATED_TOKEN_PROGRAM = 'ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsL
 
 type JsonRecord = Record<string, unknown>;
 
-type ResolveStep = {
+type LoadStep = {
   name: string;
   kind: string;
   [key: string]: unknown;
 };
 
-type ComputeStep = {
+type TransformStep = {
   name: string;
   kind: string;
   [key: string]: unknown;
@@ -436,7 +436,7 @@ function resolvePreInstructions(pre: PreInstructionSpec[] | undefined, scope: Js
     });
 }
 
-async function runResolver(step: ResolveStep, ctx: ResolverContext): Promise<unknown> {
+async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknown> {
   if (step.kind === 'wallet_pubkey') {
     return ctx.walletPublicKey.toBase58();
   }
@@ -497,7 +497,7 @@ async function runResolver(step: ResolveStep, ctx: ResolverContext): Promise<unk
   throw new Error(`Unsupported resolver: ${step.kind}`);
 }
 
-async function runComputeStep(step: ComputeStep, ctx: ResolverContext): Promise<unknown> {
+async function runComputeStep(step: TransformStep, ctx: ResolverContext): Promise<unknown> {
   const resolvedStep = asRecord(normalizeRuntimeValue(resolveTemplateValue(step, ctx.scope)), `compute:${step.name}`);
   const kind = asString(resolvedStep.kind, `compute:${step.name}:kind`);
   return runRegisteredComputeStep(
@@ -535,8 +535,8 @@ export async function prepareRuntimeOperation(options: {
     protocolId: options.protocolId,
     operationId: options.operationId,
   });
-  if (resolved.kind !== 'contract_write') {
-    throw new Error(`Operation ${options.operationId} is not a contract write.`);
+  if (resolved.kind !== 'write') {
+    throw new Error(`Operation ${options.operationId} is not a write.`);
   }
   const runtime = resolved.pack;
   const idl = await loadProtocolIdl(options.protocolId);
@@ -567,13 +567,13 @@ export async function prepareRuntimeOperation(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.resolve as ResolveStep[]) {
+  for (const step of operation.load as LoadStep[]) {
     const value = await runResolver(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;
     scope.derived = derived;
   }
-  for (const step of operation.compute as ComputeStep[]) {
+  for (const step of operation.transform as TransformStep[]) {
     const value = await runComputeStep(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;
@@ -654,13 +654,13 @@ export async function runRuntimeCompute(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.resolve as ResolveStep[]) {
+  for (const step of operation.load as LoadStep[]) {
     const value = await runResolver(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;
     scope.derived = derived;
   }
-  for (const step of operation.compute as ComputeStep[]) {
+  for (const step of operation.transform as TransformStep[]) {
     const value = await runComputeStep(step, resolverCtx);
     derived[step.name] = value;
     scope[step.name] = value;

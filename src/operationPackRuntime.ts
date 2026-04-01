@@ -52,16 +52,16 @@ type RemainingAccountMeta = {
 type AgentComputeSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
-  resolve?: unknown[];
-  compute?: unknown[];
+  load?: unknown[];
+  transform?: unknown[];
   read_output?: ReadOutputSpec;
 };
 
-type AgentExecutionSpec = {
+type AgentWriteSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
-  resolve?: unknown[];
-  compute?: unknown[];
+  load?: unknown[];
+  transform?: unknown[];
   args?: Record<string, ArgBindingValue>;
   accounts?: Record<string, string>;
   remaining_accounts?: string | RemainingAccountMeta[];
@@ -76,12 +76,12 @@ export type RuntimePack = {
   programId: string;
   codamaPath: string;
   computes?: Record<string, AgentComputeSpec>;
-  contract_writes?: Record<string, AgentExecutionSpec>;
+  writes?: Record<string, AgentWriteSpec>;
 };
 
-type OperationKind = 'compute' | 'contract_write';
+type OperationKind = 'compute' | 'write';
 
-type RawOperationSpec = AgentComputeSpec | AgentExecutionSpec;
+type RawOperationSpec = AgentComputeSpec | AgentWriteSpec;
 
 export type ResolvedIndexViewContract = {
   protocolId: string;
@@ -101,8 +101,8 @@ export type MaterializedRuntimeOperation = {
   kind: OperationKind;
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
-  resolve: unknown[];
-  compute: unknown[];
+  load: unknown[];
+  transform: unknown[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
@@ -138,8 +138,8 @@ export type RuntimeOperationExplain = {
   operationKind: OperationKind;
   instruction: string;
   inputs: Record<string, RuntimeInputSpec>;
-  resolve: unknown[];
-  compute: unknown[];
+  load: unknown[];
+  transform: unknown[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
@@ -186,7 +186,7 @@ function resolvePath(scope: JsonRecord, path: string): unknown {
 
 function mergeMaterializedFragment(
   target: MaterializedRuntimeOperation,
-  fragment: Partial<AgentComputeSpec & AgentExecutionSpec>,
+  fragment: Partial<AgentComputeSpec & AgentWriteSpec>,
 ): void {
   if (fragment.instruction) {
     target.instruction = fragment.instruction;
@@ -194,11 +194,11 @@ function mergeMaterializedFragment(
   if (fragment.inputs) {
     target.inputs = { ...target.inputs, ...cloneJsonLike(fragment.inputs) };
   }
-  if (fragment.resolve) {
-    target.resolve.push(...cloneJsonLike(fragment.resolve));
+  if (fragment.load) {
+    target.load.push(...cloneJsonLike(fragment.load));
   }
-  if (fragment.compute) {
-    target.compute.push(...cloneJsonLike(fragment.compute));
+  if (fragment.transform) {
+    target.transform.push(...cloneJsonLike(fragment.transform));
   }
   if (fragment.args) {
     target.args = { ...target.args, ...cloneJsonLike(fragment.args) };
@@ -245,7 +245,7 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
     programId: manifest.programId,
     codamaPath: manifest.codamaIdlPath,
     computes: cloneJsonLike(parsed.computes ?? {}),
-    contract_writes: cloneJsonLike(parsed.contract_writes ?? {}),
+    writes: cloneJsonLike(parsed.writes ?? {}),
   };
   runtimePackCache.set(protocolId, pack);
   return pack;
@@ -259,9 +259,9 @@ function getRawOperationSpec(
   if (compute) {
     return { kind: 'compute', spec: compute };
   }
-  const execution = pack.contract_writes?.[operationId];
-  if (execution) {
-    return { kind: 'contract_write', spec: execution };
+  const write = pack.writes?.[operationId];
+  if (write) {
+    return { kind: 'write', spec: write };
   }
   return null;
 }
@@ -276,8 +276,8 @@ export function materializeRuntimeOperation(
     kind,
     instruction: '',
     inputs: {},
-    resolve: [],
-    compute: [],
+    load: [],
+    transform: [],
     args: {},
     accounts: {},
     remainingAccounts: [],
@@ -285,7 +285,7 @@ export function materializeRuntimeOperation(
     post: [],
   };
 
-  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentComputeSpec & AgentExecutionSpec>));
+  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentComputeSpec & AgentWriteSpec>));
 
   return materialized;
 }
@@ -504,7 +504,7 @@ export async function listRuntimeOperations(options: {
       operationId,
       operationKind: kind,
       instruction: materialized.instruction,
-      executionKind: kind === 'contract_write' ? 'write' : 'compute',
+      executionKind: kind === 'write' ? 'write' : 'compute',
       inputs,
       ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) ? {
         readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`),
@@ -515,8 +515,8 @@ export async function listRuntimeOperations(options: {
   for (const [operationId, spec] of Object.entries(pack.computes ?? {})) {
     pushSummary(operationId, 'compute', spec, materializeRuntimeOperation(operationId, spec, pack, 'compute'));
   }
-  for (const [operationId, spec] of Object.entries(pack.contract_writes ?? {})) {
-    pushSummary(operationId, 'contract_write', spec, materializeRuntimeOperation(operationId, spec, pack, 'contract_write'));
+  for (const [operationId, spec] of Object.entries(pack.writes ?? {})) {
+    pushSummary(operationId, 'write', spec, materializeRuntimeOperation(operationId, spec, pack, 'write'));
   }
 
   operations.sort((a, b) => a.operationId.localeCompare(b.operationId));
@@ -542,8 +542,8 @@ export async function explainRuntimeOperation(options: {
     operationKind: resolved.kind,
     instruction: materialized.instruction,
     inputs: cloneJsonLike(materialized.inputs),
-    resolve: cloneJsonLike(materialized.resolve),
-    compute: cloneJsonLike(materialized.compute),
+    load: cloneJsonLike(materialized.load),
+    transform: cloneJsonLike(materialized.transform),
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),

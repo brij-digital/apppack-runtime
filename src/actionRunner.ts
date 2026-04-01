@@ -10,7 +10,7 @@ export type ActionRunnerInputSpec = {
 
 export type ActionRunnerStepSpec = {
   id: string;
-  kind: 'index_view' | 'compute' | 'contract_write';
+  kind: 'index_view' | 'compute' | 'write';
   protocolId: string;
   operationId: string;
   input?: Record<string, unknown>;

@@ -35,11 +35,11 @@ This file is authored by the protocol pack maintainer.
 
 What the maintainer provides there:
 - named `computes`
-- named `contract_writes`
+- named `writes`
 - exact input contracts
-- extra runtime context that still needs to be resolved
-- deterministic compute steps
-- mapping from resolved/computed values into write args/accounts
+- extra runtime context that still needs to be loaded
+- deterministic transform steps
+- mapping from loaded/transformed values into write args/accounts
 - optional `pre` / `post` envelope instructions
 
 What the maintainer does **not** need to restate there:
@@ -56,7 +56,7 @@ Required top-level keys:
   "$schema": "/idl/solana_agent_runtime.schema.v1.json",
   "schema": "solana-agent-runtime.v1",
   "computes": {},
-  "contract_writes": {}
+  "writes": {}
 }
 ```
 
@@ -70,9 +70,9 @@ Top-level attributes:
 - `computes`
   - required
   - object map from operation id to `computeSpec`
-- `contract_writes`
+- `writes`
   - required
-  - object map from operation id to `executionSpec`
+  - object map from operation id to `writeSpec`
 
 No other top-level attributes are allowed.
 
@@ -140,17 +140,17 @@ A compute operation has these attributes:
 - `inputs`
   - optional
   - map of input name -> `inputSpec`
-- `resolve`
+- `load`
   - optional
-  - array of `resolveStepSpec`
-- `compute`
+  - array of `loadStepSpec`
+- `transform`
   - optional
-  - array of `computeStepSpec`
+  - array of `transformStepSpec`
 - `read_output`
   - optional
   - `readOutputSpec`
 
-## `executionSpec`
+## `writeSpec`
 
 A contract write operation has these attributes:
 
@@ -161,12 +161,12 @@ A contract write operation has these attributes:
 - `inputs`
   - optional
   - map of input name -> `inputSpec`
-- `resolve`
+- `load`
   - optional
-  - array of `resolveStepSpec`
-- `compute`
+  - array of `loadStepSpec`
+- `transform`
   - optional
-  - array of `computeStepSpec`
+  - array of `transformStepSpec`
 - `args`
   - optional
   - map of arg name -> scalar binding
@@ -189,9 +189,9 @@ A contract write operation has these attributes:
   - optional
   - `readOutputSpec`
 
-## Resolve reference
+## Load reference
 
-`resolve` loads the extra runtime context still needed outside Codama.
+`load` brings in the extra runtime context still needed outside Codama.
 
 ### `wallet_pubkey`
 
@@ -258,9 +258,9 @@ Optional attributes:
 - string
 - any JSON value
 
-## Compute reference
+## Transform reference
 
-`compute` is a deterministic expression language.
+`transform` is the deterministic expression language used inside a compute or write operation.
 
 ### Arithmetic kinds
 
@@ -460,7 +460,7 @@ Minimal excerpt:
 ```json
 {
   "instruction": "swap_v2",
-  "resolve": [
+  "load": [
     {
       "name": "wallet",
       "kind": "wallet_pubkey"
@@ -472,7 +472,7 @@ Minimal excerpt:
       "account_type": "Whirlpool"
     }
   ],
-  "compute": [
+  "transform": [
     {
       "name": "a_to_b",
       "kind": "compare.equals",
@@ -502,7 +502,7 @@ Put logic in Codama when it is:
 - PDA-backed defaults
 
 Put logic in the runtime spec when it is:
-- deterministic protocol-specific compute
+- deterministic protocol-specific transform
 - dynamic value materialization for a write
 - small transaction-envelope logic around a write
 

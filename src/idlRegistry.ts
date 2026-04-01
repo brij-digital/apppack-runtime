@@ -55,7 +55,7 @@ type IndexingSpecShape = {
 type AgentRuntimeShape = {
   schema: string;
   computes?: Record<string, unknown>;
-  contract_writes?: Record<string, unknown>;
+  writes?: Record<string, unknown>;
 };
 
 let registryCache: RegistryShape | null = null;

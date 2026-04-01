@@ -54,7 +54,7 @@ Protocol-specific behavior belongs in pack data, not in runtime code.
 The current pack split is:
 - `Codama IDL`: instruction-level protocol source of truth
 - `indexing spec`: indexed reads and discovery
-- `runtime spec`: deterministic compute and contract-write preparation
+- `runtime spec`: deterministic compute and write preparation
 
 The runtime package owns only the third layer plus the shared loading logic around all three.
 
