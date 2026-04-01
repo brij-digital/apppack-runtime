@@ -56,6 +56,10 @@ Required top-level keys:
 {
   "$schema": "/idl/solana_agent_runtime.schema.v1.json",
   "schema": "solana-agent-runtime.v1",
+  "protocol_id": "orca-whirlpool-mainnet",
+  "program_id": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "codama_path": "/idl/orca_whirlpool.codama.json",
+  "label": "Orca Whirlpools",
   "views": {},
   "writes": {},
   "transforms": {}
@@ -69,6 +73,18 @@ Top-level attributes:
 - `schema`
   - required
   - must be `solana-agent-runtime.v1`
+- `protocol_id`
+  - required
+  - logical protocol identifier for the runtime pack
+- `program_id`
+  - required
+  - Solana program id this runtime pack targets
+- `codama_path`
+  - required
+  - `/idl/*` path to the Codama IDL used by this runtime pack
+- `label`
+  - optional
+  - human-friendly protocol label
 - `views`
   - required
   - object map from operation id to `viewSpec`
@@ -477,6 +493,9 @@ Minimal structural excerpt:
 
 ```json
 {
+  "protocol_id": "orca-whirlpool-mainnet",
+  "program_id": "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc",
+  "codama_path": "/idl/orca_whirlpool.codama.json",
   "transforms": {
     "quote_exact_in__transform": []
   },

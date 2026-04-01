@@ -84,6 +84,7 @@ export type RuntimePack = {
   protocolId: string;
   programId: string;
   codamaPath: string;
+  label?: string;
   views?: Record<string, AgentViewSpec>;
   writes?: Record<string, AgentWriteSpec>;
   transforms?: Record<string, unknown[]>;
@@ -458,7 +459,25 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
   if (!manifest.codamaIdlPath) {
     throw new Error(`Protocol ${protocolId} has no codamaIdlPath in registry.`);
   }
-  const parsed = runtime as unknown as Omit<RuntimePack, 'protocolId' | 'programId' | 'codamaPath'>;
+  const parsed = runtime as unknown as {
+    schema: 'solana-agent-runtime.v1';
+    protocol_id: string;
+    program_id: string;
+    codama_path: string;
+    label?: string;
+    views?: Record<string, AgentViewSpec>;
+    writes?: Record<string, AgentWriteSpec>;
+    transforms?: Record<string, unknown[]>;
+  };
+  if (parsed.protocol_id !== protocolId) {
+    throw new Error(`Protocol ${protocolId} runtime protocol_id mismatch: ${parsed.protocol_id}.`);
+  }
+  if (parsed.program_id !== manifest.programId) {
+    throw new Error(`Protocol ${protocolId} runtime program_id mismatch: ${parsed.program_id}.`);
+  }
+  if (parsed.codama_path !== manifest.codamaIdlPath) {
+    throw new Error(`Protocol ${protocolId} runtime codama_path mismatch: ${parsed.codama_path}.`);
+  }
   const transforms = cloneJsonLike(parsed.transforms ?? {});
   const writes = await hydrateWriteSpecsFromCodama({
     protocolId,
@@ -476,6 +495,7 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
     protocolId,
     programId: manifest.programId,
     codamaPath: manifest.codamaIdlPath,
+    ...(parsed.label ? { label: parsed.label } : {}),
     views,
     writes,
     transforms,
