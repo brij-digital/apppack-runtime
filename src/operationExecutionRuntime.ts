@@ -1,5 +1,11 @@
 import BN from 'bn.js';
-import { getAssociatedTokenAddressSync } from '@solana/spl-token';
+import {
+  getAssociatedTokenAddressSync,
+  TOKEN_2022_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  unpackAccount,
+  unpackMint,
+} from '@solana/spl-token';
 import type { Connection } from '@solana/web3.js';
 import { PublicKey } from '@solana/web3.js';
 import { getProtocolById } from './idlRegistry.js';
@@ -449,6 +455,35 @@ async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknow
     if (!info) {
       throw new Error(`Account not found for decode_account ${step.name}: ${address.toBase58()}`);
     }
+    if (accountType === 'Mint') {
+      const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+      const decoded = unpackMint(address, info, programId);
+      return normalizeRuntimeValue({
+        address: decoded.address,
+        mintAuthority: decoded.mintAuthority,
+        supply: decoded.supply,
+        decimals: decoded.decimals,
+        isInitialized: decoded.isInitialized,
+        freezeAuthority: decoded.freezeAuthority,
+      });
+    }
+    if (accountType === 'TokenAccount') {
+      const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+      const decoded = unpackAccount(address, info, programId);
+      return normalizeRuntimeValue({
+        address: decoded.address,
+        mint: decoded.mint,
+        owner: decoded.owner,
+        amount: decoded.amount,
+        delegate: decoded.delegate,
+        delegatedAmount: decoded.delegatedAmount,
+        isInitialized: decoded.isInitialized,
+        isFrozen: decoded.isFrozen,
+        isNative: decoded.isNative,
+        rentExemptReserve: decoded.rentExemptReserve,
+        closeAuthority: decoded.closeAuthority,
+      });
+    }
     const coder = new DirectAccountsCoder(ctx.idl);
     return normalizeRuntimeValue(coder.decode(accountType, info.data));
   }
@@ -459,25 +494,6 @@ async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknow
       throw new Error(`Account not found for account_owner ${step.name}: ${address.toBase58()}`);
     }
     return info.owner.toBase58();
-  }
-  if (step.kind === 'token_account_balance') {
-    const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `token_account_balance:${step.name}:address`);
-    try {
-      const balance = await ctx.connection.getTokenAccountBalance(address, 'confirmed');
-      return balance.value.amount;
-    } catch (error) {
-      const allowMissing = step.allow_missing === undefined ? false : Boolean(resolveTemplateValue(step.allow_missing, ctx.scope));
-      if (!allowMissing) {
-        throw error;
-      }
-      const defaultValue = step.default === undefined ? '0' : normalizeRuntimeValue(resolveTemplateValue(step.default, ctx.scope));
-      return String(defaultValue);
-    }
-  }
-  if (step.kind === 'token_supply') {
-    const mint = asPubkey(resolveTemplateValue(step.mint, ctx.scope), `token_supply:${step.name}:mint`);
-    const supply = await ctx.connection.getTokenSupply(mint, 'confirmed');
-    return supply.value.amount;
   }
   if (step.kind === 'ata') {
     const owner = asPubkey(resolveTemplateValue(step.owner, ctx.scope), `ata:${step.name}:owner`);

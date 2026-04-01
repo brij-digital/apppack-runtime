@@ -231,30 +231,16 @@ Required attributes:
 - `address`
 - `account_type`
 
+Notes:
+- Use protocol account types from the protocol Codama IDL.
+- Standard account types such as `Mint` and `TokenAccount` are also supported directly.
+
 ### `account_owner`
 
 Required attributes:
 - `name`
 - `kind = "account_owner"`
 - `address`
-
-### `token_account_balance`
-
-Required attributes:
-- `name`
-- `kind = "token_account_balance"`
-- `address`
-
-Optional attributes:
-- `allow_missing`
-- `default`
-
-### `token_supply`
-
-Required attributes:
-- `name`
-- `kind = "token_supply"`
-- `mint`
 
 ### `ata`
 
