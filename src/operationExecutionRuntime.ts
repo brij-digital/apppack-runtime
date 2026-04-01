@@ -149,6 +149,8 @@ export type PreparedMetaView = {
   operationId: string;
   derived: Record<string, unknown>;
   output: unknown;
+  preInstructions: PreparedPreInstruction[];
+  postInstructions: PreparedPostInstruction[];
   outputSpec?: {
     type: 'array' | 'object' | 'scalar';
     source: string;
@@ -676,6 +678,8 @@ export async function runRuntimeView(options: {
     operationId: options.operationId,
     derived,
     output,
+    preInstructions: resolvePreInstructions(operation.pre as PreInstructionSpec[] | undefined, scope),
+    postInstructions: resolvePostInstructions(operation.post as PostInstructionSpec[] | undefined, scope),
     outputSpec: normalizeReadOutputSpec(operation.output, `${options.protocolId}/${options.operationId}`),
   };
 }
