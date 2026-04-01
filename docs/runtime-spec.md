@@ -465,23 +465,14 @@ In the Orca pack:
 - `swap_exact_in`
   - targets Codama instruction `swap_v2`
   - consumes raw Codama write inputs
-  - does not compute `tick_array0/1/2` itself
-  - expects values such as `a_to_b`, `sqrt_price_limit`, and `tick_array0/1/2` to be forwarded from a prior view or runner step
   - materializes `args` and `accounts`
 
-Minimal excerpt:
+Minimal structural excerpt:
 
 ```json
 {
   "transforms": {
-    "quote_exact_in__transform": [
-      {
-        "name": "a_to_b",
-        "kind": "compare.equals",
-        "left": "$whirlpool_data.token_mint_a",
-        "right": "$input.token_in_mint"
-      }
-    ]
+    "quote_exact_in__transform": []
   },
   "views": {
     "quote_exact_in": {
@@ -494,37 +485,13 @@ Minimal excerpt:
         "whirlpool": "pubkey",
         "unwrap_sol_output": "bool"
       },
-      "load": [
-        {
-          "name": "wallet",
-          "kind": "wallet_pubkey"
-        },
-        {
-          "name": "whirlpool_data",
-          "kind": "decode_account",
-          "address": "$input.whirlpool",
-          "account_type": "Whirlpool"
-        }
-      ],
+      "load": [],
       "transform": [
         "quote_exact_in__transform"
       ],
       "output": {
         "type": "object",
-        "source": "$derived",
-        "object_schema": {
-          "fields": {
-            "a_to_b": {
-              "type": "bool"
-            },
-            "sqrt_price_limit": {
-              "type": "u128"
-            },
-            "tick_arrays": {
-              "type": "array"
-            }
-          }
-        }
+        "source": "$derived"
       }
     }
   },
@@ -550,11 +517,24 @@ Minimal excerpt:
 }
 ```
 
-In practice, the write input surface can be populated from values previously exposed by a view:
+This excerpt is intentionally structural. The real Orca pack uses larger transform fragments.
+
+Real Orca transform fragment ids:
+
+- `quote_exact_in__transform`
+- `swap_exact_in__transform`
+
+Useful references:
+
+- runtime pack: `/idl/orca_whirlpool.runtime.json`
+- Codama IDL: `/idl/orca_whirlpool.codama.json`
+- live inspect UI: `/compute-dev`
+
+For example, the real Orca flow derives values such as `a_to_b`, `sqrt_price_limit`, and `tick_arrays` before they are bound into the raw Codama-shaped write input surface:
 
 ```json
 {
-  "amount": "$quote.output.amount",
+  "amount": "$input.amount_in",
   "other_amount_threshold": "$quote.output.minimum_out",
   "sqrt_price_limit": "$quote.output.sqrt_price_limit",
   "amount_specified_is_input": true,
