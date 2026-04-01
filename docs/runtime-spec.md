@@ -100,7 +100,7 @@ Attributes:
 
 ### `outputFieldSpec`
 
-Used inside `read_output.object_schema.fields`.
+Used inside `output.object_schema.fields`.
 
 Attributes:
 - `type`
@@ -113,9 +113,9 @@ Attributes:
   - optional
   - string
 
-### `readOutputSpec`
+### `outputSpec`
 
-Typed output contract for a compute or write operation.
+Typed output contract for a read operation.
 
 Attributes:
 - `type`
@@ -138,10 +138,6 @@ Attributes:
 
 Both `readSpec` and `writeSpec` share the same preparation phase:
 
-- `instruction`
-  - optional
-  - string
-  - instruction name for contextual alignment with Codama
 - `inputs`
   - optional
   - map of input name -> `inputSpec`
@@ -162,9 +158,13 @@ This shared shape is intentional:
 
 A read operation has these attributes:
 
-- `read_output`
+- `instruction_context`
   - optional
-  - `readOutputSpec`
+  - string
+  - Codama instruction name used when the read is a preview aligned with a write instruction
+- `output`
+  - optional
+  - `outputSpec`
 
 ## `writeSpec`
 
@@ -188,9 +188,6 @@ A contract write operation has these attributes:
 - `post`
   - optional
   - array of `postInstructionSpec`
-- `read_output`
-  - optional
-  - `readOutputSpec`
 
 ## `transformSpec`
 

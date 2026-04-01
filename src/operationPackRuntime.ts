@@ -50,11 +50,11 @@ type RemainingAccountMeta = {
 };
 
 type AgentReadSpec = {
-  instruction?: string;
+  instruction_context?: string;
   inputs?: Record<string, RuntimeInputSpec>;
   load?: unknown[];
   transform?: string[];
-  read_output?: ReadOutputSpec;
+  output?: ReadOutputSpec;
 };
 
 type AgentWriteSpec = {
@@ -67,7 +67,6 @@ type AgentWriteSpec = {
   remaining_accounts?: string | RemainingAccountMeta[];
   pre?: unknown[];
   post?: unknown[];
-  read_output?: ReadOutputSpec;
 };
 
 export type RuntimePack = {
@@ -107,7 +106,7 @@ export type MaterializedRuntimeOperation = {
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  readOutput?: ReadOutputSpec;
+  output?: ReadOutputSpec;
   pre?: unknown[];
   post?: unknown[];
 };
@@ -121,10 +120,10 @@ export type RuntimeOperationInputSummary = {
 export type RuntimeOperationSummary = {
   operationId: string;
   operationKind: OperationKind;
-  instruction: string;
+  instruction?: string;
   executionKind: 'read' | 'write';
   inputs: Record<string, RuntimeOperationInputSummary>;
-  readOutput?: {
+  output?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     objectSchema?: OutputObjectSchemaSpec;
@@ -137,14 +136,14 @@ export type RuntimeOperationExplain = {
   protocolId: string;
   operationId: string;
   operationKind: OperationKind;
-  instruction: string;
+  instruction?: string;
   inputs: Record<string, RuntimeInputSpec>;
   load: unknown[];
   transform: unknown[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   remainingAccounts: unknown;
-  readOutput?: {
+  output?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     objectSchema?: OutputObjectSchemaSpec;
@@ -189,7 +188,10 @@ function mergeMaterializedFragment(
   target: MaterializedRuntimeOperation,
   fragment: Partial<AgentReadSpec & AgentWriteSpec>,
 ): void {
-  if (fragment.instruction) {
+  if ('instruction_context' in fragment && fragment.instruction_context) {
+    target.instruction = fragment.instruction_context;
+  }
+  if ('instruction' in fragment && fragment.instruction) {
     target.instruction = fragment.instruction;
   }
   if (fragment.inputs) {
@@ -215,8 +217,8 @@ function mergeMaterializedFragment(
       target.remainingAccounts = cloned;
     }
   }
-  if (fragment.read_output) {
-    target.readOutput = cloneJsonLike(fragment.read_output);
+  if ('output' in fragment && fragment.output) {
+    target.output = cloneJsonLike(fragment.output);
   }
   if (fragment.pre && fragment.pre.length > 0) {
     target.pre = [...(target.pre ?? []), ...cloneJsonLike(fragment.pre)];
@@ -334,7 +336,7 @@ export async function resolveIndexViewContract(options: {
   };
 }
 
-function normalizeReadOutputSpec(
+function normalizeOutputSpec(
   spec: ReadOutputSpec | undefined,
   context: string,
 ):
@@ -350,7 +352,7 @@ function normalizeReadOutputSpec(
     return undefined;
   }
   if (!spec.source || typeof spec.source !== 'string' || spec.source.trim().length === 0) {
-    throw new Error(`${context}: read_output.source is required.`);
+    throw new Error(`${context}: output.source is required.`);
   }
   return {
     type: spec.type,
@@ -529,11 +531,11 @@ export async function listRuntimeOperations(options: {
     operations.push({
       operationId,
       operationKind: kind,
-      instruction: materialized.instruction,
+      ...(materialized.instruction ? { instruction: materialized.instruction } : {}),
       executionKind: kind,
       inputs,
-      ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`) ? {
-        readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${operationId}`),
+      ...(normalizeOutputSpec(materialized.output, `${options.protocolId}/${operationId}`) ? {
+        output: normalizeOutputSpec(materialized.output, `${options.protocolId}/${operationId}`),
       } : {}),
     });
   };
@@ -566,15 +568,15 @@ export async function explainRuntimeOperation(options: {
     protocolId: options.protocolId,
     operationId: options.operationId,
     operationKind: resolved.kind,
-    instruction: materialized.instruction,
+    ...(materialized.instruction ? { instruction: materialized.instruction } : {}),
     inputs: cloneJsonLike(materialized.inputs),
     load: cloneJsonLike(materialized.load),
     transform: cloneJsonLike(materialized.transform),
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     remainingAccounts: cloneJsonLike(materialized.remainingAccounts),
-    ...(normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`) ? {
-      readOutput: normalizeReadOutputSpec(materialized.readOutput, `${options.protocolId}/${options.operationId}`),
+    ...(normalizeOutputSpec(materialized.output, `${options.protocolId}/${options.operationId}`) ? {
+      output: normalizeOutputSpec(materialized.output, `${options.protocolId}/${options.operationId}`),
     } : {}),
     pre: cloneJsonLike(materialized.pre ?? []),
     post: cloneJsonLike(materialized.post ?? []),

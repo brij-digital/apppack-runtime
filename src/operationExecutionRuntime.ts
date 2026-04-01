@@ -125,7 +125,7 @@ export type PreparedMetaOperation = {
   accounts: Record<string, string>;
   remainingAccounts: Array<{ pubkey: string; isSigner: boolean; isWritable: boolean }>;
   derived: Record<string, unknown>;
-  readOutput?: {
+  output?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     objectSchema?: {
@@ -149,7 +149,7 @@ export type PreparedMetaRead = {
   operationId: string;
   derived: Record<string, unknown>;
   output: unknown;
-  readOutput?: {
+  outputSpec?: {
     type: 'array' | 'object' | 'scalar' | 'list';
     source: string;
     objectSchema?: {
@@ -333,16 +333,16 @@ function assertRemainingAccounts(
 }
 
 function normalizeReadOutputSpec(
-  spec: MaterializedRuntimeOperation['readOutput'] | undefined,
+  spec: MaterializedRuntimeOperation['output'] | undefined,
   context: string,
-): PreparedMetaOperation['readOutput'] | undefined {
+): PreparedMetaOperation['output'] | undefined {
   if (!spec) {
     return undefined;
   }
   if (!spec.source || typeof spec.source !== 'string' || spec.source.trim().length === 0) {
-    throw new Error(`${context}: read_output.source is required.`);
+    throw new Error(`${context}: output.source is required.`);
   }
-  const normalized: NonNullable<PreparedMetaOperation['readOutput']> = { type: spec.type, source: spec.source };
+  const normalized: NonNullable<PreparedMetaOperation['output']> = { type: spec.type, source: spec.source };
   if (spec.object_schema && typeof spec.object_schema === 'object') {
     normalized.objectSchema = normalizeRuntimeValue(spec.object_schema) as NonNullable<typeof normalized.objectSchema>;
   }
@@ -604,7 +604,7 @@ export async function prepareRuntimeOperation(options: {
     accounts: finalAccounts,
     remainingAccounts: assertRemainingAccounts(resolvedRemainingAccounts, 'remaining_accounts'),
     derived,
-    readOutput: normalizeReadOutputSpec(operation.readOutput, `${options.protocolId}/${options.operationId}`),
+    output: normalizeReadOutputSpec(operation.output, `${options.protocolId}/${options.operationId}`),
     preInstructions: resolvePreInstructions(operation.pre as PreInstructionSpec[] | undefined, scope),
     postInstructions: resolvePostInstructions(operation.post as PostInstructionSpec[] | undefined, scope),
   };
@@ -667,8 +667,8 @@ export async function runRuntimeRead(options: {
     scope.derived = derived;
   }
 
-  const output = operation.readOutput?.source
-    ? normalizeRuntimeValue(resolvePath(scope, operation.readOutput.source))
+  const output = operation.output?.source
+    ? normalizeRuntimeValue(resolvePath(scope, operation.output.source))
     : normalizeRuntimeValue(derived);
 
   return {
@@ -676,7 +676,7 @@ export async function runRuntimeRead(options: {
     operationId: options.operationId,
     derived,
     output,
-    readOutput: normalizeReadOutputSpec(operation.readOutput, `${options.protocolId}/${options.operationId}`),
+    outputSpec: normalizeReadOutputSpec(operation.output, `${options.protocolId}/${options.operationId}`),
   };
 }
 
