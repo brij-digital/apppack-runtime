@@ -10,6 +10,8 @@ Used by:
 
 `schemas/` is the source of truth for shared AppPack schema files:
 - `declarative_decoder_runtime.schema.v1.json`
+- `solana_agent_runtime.schema.v1.json`
+- `solana_action_runner.schema.v1.json`
 
 Downstream repos should sync these files from runtime and treat local copies as generated artifacts.
 Because these files are JSON, downstream copies cannot carry inline comment headers.
@@ -41,33 +43,22 @@ Do not reintroduce the legacy `@agentform/apppack-runtime` alias.
 ## Scope
 
 This package provides generic, protocol-agnostic runtime logic for:
-- IDL instruction preparation/simulate/send
-- runtime operation materialization and execution
-- discover/derive/compute runtime primitives
-- read runtime for indexed views (`node/view-read-service`)
+- Codama-backed instruction preparation
+- runtime compute execution
+- runtime write preparation
+- runtime action-runner execution
+- shared loading/validation of protocol packs
 
-For indexed search views, the node runtime expects the backing cache to provide:
-- latest raw account bytes in `cached_program_accounts`
-- temporal metadata such as `first_seen_slot` / `last_seen_slot`
-- deterministic shortlist queries before decode/filter/select
+Protocol-specific behavior belongs in pack data, not in runtime code.
 
-Bootstrap-window concerns such as `bootstrap.lookback_seconds` are handled by the view-service sync worker, not by the runtime itself.
-The runtime simply consumes whatever account universe has already been cached locally.
+The current pack split is:
+- `Codama IDL`: instruction-level protocol source of truth
+- `indexing spec`: indexed reads and discovery
+- `runtime spec`: deterministic compute and contract-write preparation
 
-The current runtime path reads directly from cached accounts.
-It no longer depends on a separate `view_entities` table or legacy materialized-entity flow.
+The runtime package owns only the third layer plus the shared loading logic around all three.
 
-The intended split is:
-- `search` views: cache/index-first, because they need discovery over an account universe
-- `account` views: direct known-account reads, which may be served from cache or straight from RPC depending on the caller and deployment model
-
-In other words, `account` does not mean "stale cached forever".
-It means the view starts from a known address instead of a discovery scan.
-
-Protocol-specific behavior belongs in pack data (`codama + runtime`), not in runtime code.
-For indexing/runtime ownership, the intended split is:
-- `Codama IDL`: declarative protocol description and protocol source of truth
-- `declarative runtime spec`: declarative indexing contract
+For a concrete description of the runtime layer, see [docs/runtime-spec.md](docs/runtime-spec.md).
 
 ## Exports
 
@@ -75,7 +66,6 @@ For indexing/runtime ownership, the intended split is:
 - `@brij-digital/apppack-runtime/idlDeclarativeRuntime`
 - `@brij-digital/apppack-runtime/runtimeOperationRuntime`
 - `@brij-digital/apppack-runtime/idlRegistry`
-- `@brij-digital/apppack-runtime/node/view-read-service`
 
 ## Scripts
 
@@ -93,11 +83,14 @@ npm run test
 
 ## Package Layout
 
+- `src/operationPackRuntime.ts`
+- `src/operationExecutionRuntime.ts`
+- `src/runtimeOperationRuntime.ts`
 - `src/idlDeclarativeRuntime.ts`
-- `src/metaDiscoverRegistry.ts`
 - `src/metaComputeRegistry.ts`
-- `src/codamaAnchor.ts`
-- `src/node/view-read-service.ts`
+- `src/actionRunner.ts`
+- `src/codamaIdl.ts`
+- `src/idlRegistry.ts`
 
 ## Versioning Notes
 
