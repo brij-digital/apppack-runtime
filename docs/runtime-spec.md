@@ -151,7 +151,6 @@ Both `readSpec` and `writeSpec` share the same preparation phase:
 - `transform`
   - optional
   - array of:
-    - inline `transformStepSpec`, or
     - string references to top-level `transforms`
 
 This shared shape is intentional:
@@ -195,12 +194,12 @@ A contract write operation has these attributes:
 
 ## `transformSpec`
 
-Top-level `transforms` is a reusable catalog.
+Top-level `transforms` is the only place where transform steps are declared.
 
 Each entry is:
 - a named array of `transformStepSpec`
 
-Operations can reference these entries from their local `transform` array by name.
+Operations reference these entries from their local `transform` array by name.
 
 Example:
 
@@ -302,7 +301,7 @@ Optional attributes:
 
 ## Transform reference
 
-`transform` is the deterministic expression language used inside a read or write operation.
+`transform` is the deterministic expression language used by named root transform fragments.
 
 ### Arithmetic kinds
 

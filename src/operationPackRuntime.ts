@@ -49,13 +49,11 @@ type RemainingAccountMeta = {
   isWritable?: boolean;
 };
 
-type TransformUse = string | unknown;
-
 type AgentReadSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
   load?: unknown[];
-  transform?: TransformUse[];
+  transform?: string[];
   read_output?: ReadOutputSpec;
 };
 
@@ -63,7 +61,7 @@ type AgentWriteSpec = {
   instruction?: string;
   inputs?: Record<string, RuntimeInputSpec>;
   load?: unknown[];
-  transform?: TransformUse[];
+  transform?: string[];
   args?: Record<string, ArgBindingValue>;
   accounts?: Record<string, string>;
   remaining_accounts?: string | RemainingAccountMeta[];
@@ -201,7 +199,7 @@ function mergeMaterializedFragment(
     target.load.push(...cloneJsonLike(fragment.load));
   }
   if (fragment.transform) {
-    target.transform.push(...cloneJsonLike(fragment.transform as unknown[]));
+    target.transform.push(...cloneJsonLike(fragment.transform));
   }
   if (fragment.args) {
     target.args = { ...target.args, ...cloneJsonLike(fragment.args) };
@@ -232,14 +230,10 @@ function expandTransformPipeline(options: {
   protocolId: string;
   operationId: string;
   catalog: Record<string, unknown[]>;
-  pipeline: unknown[];
+  pipeline: string[];
 }): unknown[] {
   const expanded: unknown[] = [];
   for (const [index, entry] of options.pipeline.entries()) {
-    if (typeof entry !== 'string') {
-      expanded.push(cloneJsonLike(entry));
-      continue;
-    }
     const fragment = options.catalog[entry];
     if (!Array.isArray(fragment)) {
       throw new Error(`Unknown transform fragment ${entry} in ${options.protocolId}/${options.operationId} at transform[${index}].`);
@@ -311,11 +305,12 @@ export function materializeRuntimeOperation(
   };
 
   mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentReadSpec & AgentWriteSpec>));
+  const transformRefs = cloneJsonLike(materialized.transform) as string[];
   materialized.transform = expandTransformPipeline({
     protocolId: pack.protocolId,
     operationId,
     catalog: cloneJsonLike(pack.transforms ?? {}),
-    pipeline: materialized.transform,
+    pipeline: transformRefs,
   });
 
   return materialized;
