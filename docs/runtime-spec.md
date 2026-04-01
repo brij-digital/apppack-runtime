@@ -550,7 +550,7 @@ Minimal excerpt:
 }
 ```
 
-In practice, a runner step or caller forwards the derived quote values into the write input surface:
+In practice, the write input surface can be populated from values previously exposed by a view:
 
 ```json
 {
