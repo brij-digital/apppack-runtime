@@ -533,10 +533,9 @@ Minimal structural excerpt:
 
 This excerpt is intentionally structural. The real Orca pack uses larger transform fragments.
 
-Real Orca transform fragment ids:
+Real Orca transform fragment id used by the current flow:
 
 - `quote_exact_in__transform`
-- `swap_exact_in__transform`
 
 Useful references:
 
