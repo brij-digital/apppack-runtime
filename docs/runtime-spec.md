@@ -81,7 +81,36 @@ Top-level attributes:
 
 No other top-level attributes are allowed.
 
-## Shared attribute types
+## Shared operation core
+
+Both `readSpec` and `writeSpec` share the same preparation phase:
+
+- `load`
+  - optional
+  - array of `loadStepSpec`
+- `transform`
+  - optional
+  - array of:
+    - string references to top-level `transforms`
+
+This shared shape is intentional:
+- both may need to load extra runtime state
+- both may need deterministic derived values before they diverge
+
+## `readSpec`
+
+A read operation has these attributes:
+
+- `inputs`
+  - optional
+  - map of input name -> type string
+- `output`
+  - optional
+  - `outputSpec`
+
+## Read Output Types
+
+These types are used only by `reads[*].output`.
 
 ### `outputFieldSpec`
 
@@ -115,33 +144,6 @@ Attributes:
 - `scalar_type`
   - optional
   - scalar type string for `type = scalar`
-
-## Shared operation core
-
-Both `readSpec` and `writeSpec` share the same preparation phase:
-
-- `load`
-  - optional
-  - array of `loadStepSpec`
-- `transform`
-  - optional
-  - array of:
-    - string references to top-level `transforms`
-
-This shared shape is intentional:
-- both may need to load extra runtime state
-- both may need deterministic derived values before they diverge
-
-## `readSpec`
-
-A read operation has these attributes:
-
-- `inputs`
-  - optional
-  - map of input name -> type string
-- `output`
-  - optional
-  - `outputSpec`
 
 ## `writeSpec`
 
