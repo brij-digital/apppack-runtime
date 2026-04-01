@@ -37,7 +37,7 @@ What the maintainer provides there:
 - named `reads`
 - named `writes`
 - named reusable `transforms`
-- exact input contracts
+- exact read input contracts
 - extra runtime context that still needs to be loaded
 - deterministic transform steps and reusable transform fragments
 - mapping from loaded/transformed values into write args/accounts
@@ -85,7 +85,7 @@ No other top-level attributes are allowed.
 
 ### `inputSpec`
 
-Used inside `inputs`.
+Used only inside `reads[*].inputs`.
 
 Attributes:
 - `type`
@@ -138,9 +138,6 @@ Attributes:
 
 Both `readSpec` and `writeSpec` share the same preparation phase:
 
-- `inputs`
-  - optional
-  - map of input name -> `inputSpec`
 - `load`
   - optional
   - array of `loadStepSpec`
@@ -150,7 +147,6 @@ Both `readSpec` and `writeSpec` share the same preparation phase:
     - string references to top-level `transforms`
 
 This shared shape is intentional:
-- reads and writes often need the same input contract
 - both may need to load extra runtime state
 - both may need deterministic derived values before they diverge
 
@@ -162,6 +158,9 @@ A read operation has these attributes:
   - optional
   - string
   - Codama instruction name used when the read is a preview aligned with a write instruction
+- `inputs`
+  - optional
+  - map of input name -> `inputSpec`
 - `output`
   - optional
   - `outputSpec`
@@ -169,6 +168,13 @@ A read operation has these attributes:
 ## `writeSpec`
 
 A contract write operation has these attributes:
+
+- `instruction`
+  - optional
+  - target instruction name in Codama
+- write inputs are not declared in the runtime file
+  - the write input surface is sourced from Codama
+  - only Codama args/accounts still referenced through `$input.*` remain visible as write inputs
 
 - `args`
   - optional

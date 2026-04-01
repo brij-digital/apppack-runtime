@@ -4,6 +4,13 @@ import {
   loadProtocolAgentRuntime,
   type ProtocolManifest,
 } from './idlRegistry.js';
+import {
+  findCodamaInstructionByName,
+  loadProtocolCodamaFromRuntime,
+  type CodamaInstructionAccountDef,
+  type CodamaInstructionArgDef,
+  type CodamaTypeRef,
+} from './codamaIdl.js';
 import { PublicKey } from '@solana/web3.js';
 
 type JsonRecord = Record<string, unknown>;
@@ -156,6 +163,14 @@ export type RuntimeOperationExplain = {
 
 const runtimePackCache = new Map<string, RuntimePack>();
 
+function toSnakeCase(value: string): string {
+  return value
+    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
+    .replace(/[\s-]+/g, '_')
+    .replace(/__+/g, '_')
+    .toLowerCase();
+}
+
 function cloneJsonLike<T>(value: T): T {
   if (value === undefined) {
     return value;
@@ -228,6 +243,166 @@ function mergeMaterializedFragment(
   }
 }
 
+function collectInputReferences(value: unknown, refs: Set<string>): void {
+  if (typeof value === 'string') {
+    if (value.startsWith('$input.')) {
+      const name = value.slice('$input.'.length).split('.').filter(Boolean)[0];
+      if (name) {
+        refs.add(name);
+      }
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const entry of value) {
+      collectInputReferences(entry, refs);
+    }
+    return;
+  }
+  if (value && typeof value === 'object') {
+    for (const entry of Object.values(value as JsonRecord)) {
+      collectInputReferences(entry, refs);
+    }
+  }
+}
+
+function expandReferencedTransformSteps(
+  transformRefs: string[] | undefined,
+  catalog: Record<string, unknown[]>,
+): unknown[] {
+  const expanded: unknown[] = [];
+  for (const ref of transformRefs ?? []) {
+    const fragment = catalog[ref];
+    if (!Array.isArray(fragment)) {
+      throw new Error(`Unknown transform fragment ${ref}.`);
+    }
+    expanded.push(...cloneJsonLike(fragment));
+  }
+  return expanded;
+}
+
+function collectWriteInputReferences(spec: AgentWriteSpec, catalog: Record<string, unknown[]>): Set<string> {
+  const refs = new Set<string>();
+  collectInputReferences(spec.load, refs);
+  collectInputReferences(expandReferencedTransformSteps(spec.transform, catalog), refs);
+  collectInputReferences(spec.args, refs);
+  collectInputReferences(spec.accounts, refs);
+  collectInputReferences(spec.remaining_accounts, refs);
+  collectInputReferences(spec.pre, refs);
+  collectInputReferences(spec.post, refs);
+  return refs;
+}
+
+function codamaTypeToRuntimeType(type: CodamaTypeRef | unknown): string {
+  if (typeof type === 'string') {
+    if (type === 'pubkey' || type === 'publicKey') {
+      return 'pubkey';
+    }
+    if (type === 'bool') {
+      return 'bool';
+    }
+    return type;
+  }
+  if (type && typeof type === 'object') {
+    if ('option' in type) {
+      return codamaTypeToRuntimeType((type as { option: CodamaTypeRef }).option);
+    }
+    if ('defined' in type) {
+      return 'json';
+    }
+    if ('vec' in type || 'array' in type) {
+      return 'json';
+    }
+  }
+  return 'json';
+}
+
+function isOptionalCodamaType(type: CodamaTypeRef | unknown): boolean {
+  return Boolean(type && typeof type === 'object' && 'option' in type);
+}
+
+function buildWriteInputSpecFromCodamaRef(options: {
+  protocolId: string;
+  operationId: string;
+  inputName: string;
+  instructionName: string;
+  args: CodamaInstructionArgDef[];
+  accounts: CodamaInstructionAccountDef[];
+}): RuntimeInputSpec {
+  const arg = options.args.find((candidate) => toSnakeCase(candidate.name) === options.inputName);
+  if (arg && toSnakeCase(arg.name) !== 'discriminator') {
+    return {
+      type: codamaTypeToRuntimeType(arg.type),
+      required: !isOptionalCodamaType(arg.type),
+    };
+  }
+
+  const account = options.accounts.find((candidate) => toSnakeCase(candidate.name) === options.inputName);
+  if (account) {
+    if (account.signer) {
+      throw new Error(
+        `Write ${options.protocolId}/${options.operationId} references signer input ${options.inputName}; wallet signer must not be user-provided.`,
+      );
+    }
+    return {
+      type: 'pubkey',
+      required: !(account.optional ?? false),
+    };
+  }
+
+  throw new Error(
+    `Write ${options.protocolId}/${options.operationId} references non-Codama input ${options.inputName} for instruction ${options.instructionName}.`,
+  );
+}
+
+async function hydrateWriteSpecsFromCodama(options: {
+  protocolId: string;
+  writes: Record<string, AgentWriteSpec>;
+  transforms: Record<string, unknown[]>;
+}): Promise<Record<string, AgentWriteSpec>> {
+  const codama = await loadProtocolCodamaFromRuntime(options.protocolId);
+  const nextWrites: Record<string, AgentWriteSpec> = {};
+
+  for (const [operationId, writeSpec] of Object.entries(options.writes)) {
+    if (writeSpec.inputs !== undefined) {
+      throw new Error(
+        `Write ${options.protocolId}/${operationId} must not declare inputs explicitly; write inputs are sourced from Codama.`,
+      );
+    }
+    if (!writeSpec.instruction) {
+      nextWrites[operationId] = cloneJsonLike(writeSpec);
+      continue;
+    }
+
+    const instruction = findCodamaInstructionByName(codama, writeSpec.instruction);
+    if (!instruction) {
+      throw new Error(`Write ${options.protocolId}/${operationId} references unknown Codama instruction ${writeSpec.instruction}.`);
+    }
+
+    const refs = [...collectWriteInputReferences(writeSpec, options.transforms)].sort();
+    const inputs = Object.fromEntries(
+      refs.map((inputName) => [
+        inputName,
+        buildWriteInputSpecFromCodamaRef({
+          protocolId: options.protocolId,
+          operationId,
+          inputName,
+          instructionName: instruction.name,
+          args: instruction.args,
+          accounts: instruction.accounts,
+        }),
+      ]),
+    );
+
+    nextWrites[operationId] = {
+      ...cloneJsonLike(writeSpec),
+      inputs,
+    };
+  }
+
+  return nextWrites;
+}
+
 function expandTransformPipeline(options: {
   protocolId: string;
   operationId: string;
@@ -259,14 +434,20 @@ export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> 
     throw new Error(`Protocol ${protocolId} has no codamaIdlPath in registry.`);
   }
   const parsed = runtime as unknown as Omit<RuntimePack, 'protocolId' | 'programId' | 'codamaPath'>;
+  const transforms = cloneJsonLike(parsed.transforms ?? {});
+  const writes = await hydrateWriteSpecsFromCodama({
+    protocolId,
+    writes: cloneJsonLike(parsed.writes ?? {}),
+    transforms,
+  });
   const pack: RuntimePack = {
     schema: 'solana-agent-runtime.v1',
     protocolId,
     programId: manifest.programId,
     codamaPath: manifest.codamaIdlPath,
     reads: cloneJsonLike(parsed.reads ?? {}),
-    writes: cloneJsonLike(parsed.writes ?? {}),
-    transforms: cloneJsonLike(parsed.transforms ?? {}),
+    writes,
+    transforms,
   };
   runtimePackCache.set(protocolId, pack);
   return pack;
