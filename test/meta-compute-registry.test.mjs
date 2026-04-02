@@ -109,11 +109,21 @@ test('meta compute supports modular and bitwise helpers', async () => {
     },
     BASE_CTX,
   );
+  const divRoundUp = await runRegisteredComputeStep(
+    {
+      name: 'ceil_div',
+      kind: 'math.div_round_up',
+      dividend: '10',
+      divisor: '3',
+    },
+    BASE_CTX,
+  );
 
   assert.equal(mod, '-1');
   assert.equal(shiftLeft, '18446744073709551616');
   assert.equal(shiftRight, '18446744073709551616');
   assert.equal(bitAnd, '4');
+  assert.equal(divRoundUp, '4');
 });
 
 test('meta compute supports list sorting and first-match lookup', async () => {

@@ -330,6 +330,12 @@ async function runMathBitAnd(step: ComputeStepResolved): Promise<string> {
   return toStringInteger(left & right);
 }
 
+async function runMathDivRoundUp(step: ComputeStepResolved): Promise<string> {
+  const dividend = asBigInt(step.dividend, `compute:${step.name}:dividend`);
+  const divisor = asBigInt(step.divisor, `compute:${step.name}:divisor`);
+  return toStringInteger(ceilDivBigInt(dividend, divisor));
+}
+
 async function runListRangeMap(step: ComputeStepResolved): Promise<number[]> {
   const base = asSafeInteger(step.base, `compute:${step.name}:base`);
   const stepSize = asSafeInteger(step.step, `compute:${step.name}:step`);
@@ -704,6 +710,7 @@ const COMPUTE_EXECUTORS: Record<string, ComputeExecutor> = {
   'math.shift_left': runMathShiftLeft,
   'math.shift_right': runMathShiftRight,
   'math.bit_and': runMathBitAnd,
+  'math.div_round_up': runMathDivRoundUp,
   'list.range_map': runListRangeMap,
   'list.get': runListGet,
   'list.filter': runListFilter,

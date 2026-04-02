@@ -49,6 +49,8 @@ type ScopedTransformStep = TransformStep & {
   item_as?: unknown;
   index_as?: unknown;
   acc_as?: unknown;
+  transform?: unknown;
+  bindings?: unknown;
 };
 
 type MetaCondition =
@@ -604,6 +606,32 @@ function isScopedComputeKind(kind: string): boolean {
   return kind === 'list.map' || kind === 'list.flat_map' || kind === 'list.reduce';
 }
 
+async function runNamedTransformStep(step: TransformStep, ctx: ResolverContext): Promise<unknown> {
+  const transformName = asString(step.transform, `compute:${step.name}:transform`);
+  const transformSteps = ctx.runtime.transforms?.[transformName];
+  if (!Array.isArray(transformSteps)) {
+    throw new Error(`Transform ${transformName} not found in runtime pack.`);
+  }
+  const output = step.output;
+  if (output === undefined) {
+    throw new Error(`compute:${step.name}:output must be provided for transform step.`);
+  }
+  const bindingsRaw = step.bindings === undefined ? {} : asRecord(step.bindings, `compute:${step.name}:bindings`);
+  const bindings = Object.fromEntries(
+    Object.entries(bindingsRaw).map(([key, value]) => [key, normalizeRuntimeValue(resolveTemplateValue(value, ctx.scope))]),
+  );
+  const localScope: JsonRecord = {
+    ...ctx.scope,
+    ...bindings,
+  };
+  await runNestedTransformSteps(
+    asTransformSteps(transformSteps, `runtime.transforms.${transformName}`),
+    ctx,
+    localScope,
+  );
+  return normalizeRuntimeValue(resolveScopedOutput(output, localScope, `compute:${step.name}:output`));
+}
+
 async function runNestedTransformSteps(
   steps: TransformStep[],
   ctx: ResolverContext,
@@ -687,6 +715,9 @@ async function runComputeStep(step: TransformStep, ctx: ResolverContext): Promis
       return runListFlatMapStep(step as ScopedTransformStep, ctx);
     }
     return runListReduceStep(step as ScopedTransformStep, ctx);
+  }
+  if (step.kind === 'transform') {
+    return runNamedTransformStep(step, ctx);
   }
   const resolvedStep = asRecord(normalizeRuntimeValue(resolveTemplateValue(step, ctx.scope)), `compute:${step.name}`);
   const kind = asString(resolvedStep.kind, `compute:${step.name}:kind`);
