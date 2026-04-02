@@ -297,6 +297,39 @@ async function runMathMulDivCeil(step: ComputeStepResolved): Promise<string> {
   return toStringInteger(ceilDivBigInt(multiplicand * multiplier, divisor));
 }
 
+async function runMathMod(step: ComputeStepResolved): Promise<string> {
+  const dividend = asBigInt(step.dividend, `compute:${step.name}:dividend`);
+  const divisor = asBigInt(step.divisor, `compute:${step.name}:divisor`);
+  if (divisor === 0n) {
+    throw new Error(`compute:${step.name}:divisor must not be zero.`);
+  }
+  return toStringInteger(dividend % divisor);
+}
+
+async function runMathShiftLeft(step: ComputeStepResolved): Promise<string> {
+  const value = asBigInt(step.value, `compute:${step.name}:value`);
+  const shift = asSafeInteger(step.shift, `compute:${step.name}:shift`);
+  if (shift < 0) {
+    throw new Error(`compute:${step.name}:shift must be non-negative.`);
+  }
+  return toStringInteger(value << BigInt(shift));
+}
+
+async function runMathShiftRight(step: ComputeStepResolved): Promise<string> {
+  const value = asBigInt(step.value, `compute:${step.name}:value`);
+  const shift = asSafeInteger(step.shift, `compute:${step.name}:shift`);
+  if (shift < 0) {
+    throw new Error(`compute:${step.name}:shift must be non-negative.`);
+  }
+  return toStringInteger(value >> BigInt(shift));
+}
+
+async function runMathBitAnd(step: ComputeStepResolved): Promise<string> {
+  const left = asBigInt(step.left, `compute:${step.name}:left`);
+  const right = asBigInt(step.right, `compute:${step.name}:right`);
+  return toStringInteger(left & right);
+}
+
 async function runListRangeMap(step: ComputeStepResolved): Promise<number[]> {
   const base = asSafeInteger(step.base, `compute:${step.name}:base`);
   const stepSize = asSafeInteger(step.step, `compute:${step.name}:step`);
@@ -414,6 +447,11 @@ async function runListFindFirst(step: ComputeStepResolved): Promise<unknown> {
     throw new Error(`compute:${step.name}:no matching item found.`);
   }
   return match;
+}
+
+async function runListConcat(step: ComputeStepResolved): Promise<unknown[]> {
+  const lists = asArray(step.lists, `compute:${step.name}:lists`);
+  return lists.flatMap((entry, index) => asArray(entry, `compute:${step.name}:lists[${index}]`));
 }
 
 function pickByPath(items: unknown[], path: string, mode: 'min' | 'max', label: string): unknown {
@@ -662,12 +700,17 @@ const COMPUTE_EXECUTORS: Record<string, ComputeExecutor> = {
   'math.max': runMathMax,
   'math.mul_div_floor': runMathMulDivFloor,
   'math.mul_div_ceil': runMathMulDivCeil,
+  'math.mod': runMathMod,
+  'math.shift_left': runMathShiftLeft,
+  'math.shift_right': runMathShiftRight,
+  'math.bit_and': runMathBitAnd,
   'list.range_map': runListRangeMap,
   'list.get': runListGet,
   'list.filter': runListFilter,
   'list.first': runListFirst,
   'list.sort_by': runListSortBy,
   'list.find_first': runListFindFirst,
+  'list.concat': runListConcat,
   'list.min_by': runListMinBy,
   'list.max_by': runListMaxBy,
   coalesce: runCoalesce,

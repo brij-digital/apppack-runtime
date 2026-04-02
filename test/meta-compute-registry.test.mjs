@@ -72,6 +72,50 @@ test('meta compute supports min/max and mul_div floor/ceil helpers', async () =>
   assert.equal(mulDivCeil, '920');
 });
 
+test('meta compute supports modular and bitwise helpers', async () => {
+  const mod = await runRegisteredComputeStep(
+    {
+      name: 'tick_mod_spacing',
+      kind: 'math.mod',
+      dividend: '-5',
+      divisor: '2',
+    },
+    BASE_CTX,
+  );
+  const shiftLeft = await runRegisteredComputeStep(
+    {
+      name: 'q64_one',
+      kind: 'math.shift_left',
+      value: '1',
+      shift: 64,
+    },
+    BASE_CTX,
+  );
+  const shiftRight = await runRegisteredComputeStep(
+    {
+      name: 'restore_integer',
+      kind: 'math.shift_right',
+      value: '340282366920938463463374607431768211456',
+      shift: 64,
+    },
+    BASE_CTX,
+  );
+  const bitAnd = await runRegisteredComputeStep(
+    {
+      name: 'tick_mask',
+      kind: 'math.bit_and',
+      left: '13',
+      right: '6',
+    },
+    BASE_CTX,
+  );
+
+  assert.equal(mod, '-1');
+  assert.equal(shiftLeft, '18446744073709551616');
+  assert.equal(shiftRight, '18446744073709551616');
+  assert.equal(bitAnd, '4');
+});
+
 test('meta compute supports list sorting and first-match lookup', async () => {
   const items = [
     { start_tick_index: 5632, initialized: false },
@@ -103,6 +147,31 @@ test('meta compute supports list sorting and first-match lookup', async () => {
     [0, 5632, 11264],
   );
   assert.deepEqual(firstInitialized, { start_tick_index: 0, initialized: true });
+});
+
+test('meta compute supports concatenating lists', async () => {
+  const concatenated = await runRegisteredComputeStep(
+    {
+      name: 'swap_targets',
+      kind: 'list.concat',
+      lists: [
+        [
+          { tick_index: '2', initialized: true },
+          { tick_index: '4', initialized: true },
+        ],
+        [
+          { tick_index: '527', initialized: false, terminal: true },
+        ],
+      ],
+    },
+    BASE_CTX,
+  );
+
+  assert.deepEqual(concatenated, [
+    { tick_index: '2', initialized: true },
+    { tick_index: '4', initialized: true },
+    { tick_index: '527', initialized: false, terminal: true },
+  ]);
 });
 
 test('meta compute supports object creation and shallow merge', async () => {
