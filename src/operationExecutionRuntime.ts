@@ -43,6 +43,14 @@ type TransformStep = {
   [key: string]: unknown;
 };
 
+type ScopedTransformStep = TransformStep & {
+  steps?: unknown;
+  output?: unknown;
+  item_as?: unknown;
+  index_as?: unknown;
+  acc_as?: unknown;
+};
+
 type MetaCondition =
   | { equals: [unknown, unknown] }
   | { all: MetaCondition[] }
@@ -206,6 +214,13 @@ function asString(value: unknown, label: string): string {
   return value;
 }
 
+function asArray(value: unknown, label: string): unknown[] {
+  if (!Array.isArray(value)) {
+    throw new Error(`${label} must be an array.`);
+  }
+  return value;
+}
+
 function normalizeRuntimeValue(value: unknown): unknown {
   if (BN.isBN(value)) {
     return (value as { toString(): string }).toString();
@@ -222,6 +237,15 @@ function normalizeRuntimeValue(value: unknown): unknown {
     );
   }
   return value;
+}
+
+function asTransformSteps(value: unknown, label: string): TransformStep[] {
+  return asArray(value, label).map((entry, index) => {
+    const record = asRecord(entry, `${label}[${index}]`);
+    const name = asString(record.name, `${label}[${index}].name`);
+    const kind = asString(record.kind, `${label}[${index}].kind`);
+    return { ...record, name, kind };
+  });
 }
 
 function readPathFromValue(value: unknown, path: string): unknown {
@@ -258,6 +282,13 @@ function resolveTemplateValue(value: unknown, scope: JsonRecord): unknown {
     );
   }
   return value;
+}
+
+function resolveScopedOutput(output: unknown, scope: JsonRecord, label: string): unknown {
+  if (typeof output !== 'string' || !output.startsWith('$')) {
+    throw new Error(`${label} must be a $-prefixed path.`);
+  }
+  return resolveTemplateValue(output, scope);
 }
 
 function normalizeComparable(value: unknown): unknown {
@@ -569,7 +600,94 @@ async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknow
   throw new Error(`Unsupported resolver: ${step.kind}`);
 }
 
+function isScopedComputeKind(kind: string): boolean {
+  return kind === 'list.map' || kind === 'list.flat_map' || kind === 'list.reduce';
+}
+
+async function runNestedTransformSteps(
+  steps: TransformStep[],
+  ctx: ResolverContext,
+  scope: JsonRecord,
+): Promise<void> {
+  const derived: Record<string, unknown> = {};
+  scope.derived = derived;
+  const nestedCtx: ResolverContext = {
+    ...ctx,
+    scope,
+  };
+  for (const step of steps) {
+    const value = await runComputeStep(step, nestedCtx);
+    derived[step.name] = value;
+    scope[step.name] = value;
+    scope.derived = derived;
+  }
+}
+
+async function runListMapStep(step: ScopedTransformStep, ctx: ResolverContext): Promise<unknown[]> {
+  const items = asArray(resolveTemplateValue(step.items, ctx.scope), `compute:${step.name}:items`);
+  const steps = step.steps === undefined ? [] : asTransformSteps(step.steps, `compute:${step.name}:steps`);
+  const output = step.output;
+  const itemAs = step.item_as === undefined ? 'item' : asString(step.item_as, `compute:${step.name}:item_as`);
+  const indexAs = step.index_as === undefined ? 'index' : asString(step.index_as, `compute:${step.name}:index_as`);
+  const results: unknown[] = [];
+
+  for (const [index, item] of items.entries()) {
+    const localScope: JsonRecord = {
+      ...ctx.scope,
+      [itemAs]: normalizeRuntimeValue(item),
+      [indexAs]: index,
+    };
+    await runNestedTransformSteps(steps, ctx, localScope);
+    results.push(normalizeRuntimeValue(resolveScopedOutput(output, localScope, `compute:${step.name}:output`)));
+  }
+
+  return results;
+}
+
+async function runListFlatMapStep(step: ScopedTransformStep, ctx: ResolverContext): Promise<unknown[]> {
+  const nested = await runListMapStep(step, ctx);
+  const out: unknown[] = [];
+  nested.forEach((entry, index) => {
+    const arrayEntry = asArray(entry, `compute:${step.name}:mapped[${index}]`);
+    out.push(...arrayEntry.map((item) => normalizeRuntimeValue(item)));
+  });
+  return out;
+}
+
+async function runListReduceStep(step: ScopedTransformStep, ctx: ResolverContext): Promise<unknown> {
+  const items = asArray(resolveTemplateValue(step.items, ctx.scope), `compute:${step.name}:items`);
+  const steps = step.steps === undefined ? [] : asTransformSteps(step.steps, `compute:${step.name}:steps`);
+  const output = step.output;
+  const initial = normalizeRuntimeValue(resolveTemplateValue(step.initial, ctx.scope));
+  const itemAs = step.item_as === undefined ? 'item' : asString(step.item_as, `compute:${step.name}:item_as`);
+  const indexAs = step.index_as === undefined ? 'index' : asString(step.index_as, `compute:${step.name}:index_as`);
+  const accAs = step.acc_as === undefined ? 'acc' : asString(step.acc_as, `compute:${step.name}:acc_as`);
+
+  let accumulator = initial;
+  for (const [index, item] of items.entries()) {
+    const localScope: JsonRecord = {
+      ...ctx.scope,
+      [itemAs]: normalizeRuntimeValue(item),
+      [indexAs]: index,
+      [accAs]: accumulator,
+    };
+    await runNestedTransformSteps(steps, ctx, localScope);
+    accumulator = normalizeRuntimeValue(resolveScopedOutput(output, localScope, `compute:${step.name}:output`));
+  }
+
+  return accumulator;
+}
+
 async function runComputeStep(step: TransformStep, ctx: ResolverContext): Promise<unknown> {
+  if (isScopedComputeKind(step.kind)) {
+    if (step.kind === 'list.map') {
+      return runListMapStep(step as ScopedTransformStep, ctx);
+    }
+    if (step.kind === 'list.flat_map') {
+      return runListFlatMapStep(step as ScopedTransformStep, ctx);
+    }
+    return runListReduceStep(step as ScopedTransformStep, ctx);
+  }
   const resolvedStep = asRecord(normalizeRuntimeValue(resolveTemplateValue(step, ctx.scope)), `compute:${step.name}`);
   const kind = asString(resolvedStep.kind, `compute:${step.name}:kind`);
   return runRegisteredComputeStep(
