@@ -11,14 +11,13 @@ test('hydrateAndValidateRuntimeInputs rejects symbol-like token_mint values', ()
           token_out_mint: 'So11111111111111111111111111111111111111112',
         },
         materialized: {
-          kind: 'index_view',
+          kind: 'view',
           instruction: '',
           inputs: {
             token_in_mint: { type: 'token_mint' },
             token_out_mint: { type: 'token_mint' },
           },
-          load: [],
-          transform: [],
+          steps: [],
           args: {},
           accounts: {},
           remainingAccounts: [],
@@ -38,16 +37,15 @@ test('hydrateAndValidateRuntimeInputs normalizes valid pubkey-like inputs', () =
       token_out_mint: 'So11111111111111111111111111111111111111112',
       slippage_bps: 100,
     },
-        materialized: {
-          kind: 'read',
+    materialized: {
+      kind: 'view',
           instruction: '',
       inputs: {
         token_in_mint: { type: 'token_mint' },
         token_out_mint: { type: 'token_mint' },
         slippage_bps: { type: 'u16' },
       },
-      load: [],
-      transform: [],
+      steps: [],
       args: {},
       accounts: {},
       remainingAccounts: [],

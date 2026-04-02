@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { resolveAppUrl } from './appUrl.js';
 import { getProtocolById } from './idlRegistry.js';
 import bs58 from 'bs58';
@@ -76,6 +78,23 @@ const instructionCache = new WeakMap<JsonRecord, CodamaInstructionDef[]>();
 const accountCache = new WeakMap<JsonRecord, CodamaAccountDef[]>();
 const typeDefCache = new WeakMap<JsonRecord, CodamaTypeDef[]>();
 const pdaCache = new WeakMap<JsonRecord, Map<string, { name: string; seeds: CodamaPdaSeedDef[]; programId?: string }>>();
+
+function resolveLocalRegistryPath(): string | null {
+  if (typeof window !== 'undefined') {
+    return null;
+  }
+  const explicit = typeof process !== 'undefined' && process.env
+    ? process.env.APPPACK_RUNTIME_REGISTRY_PATH
+    : undefined;
+  if (typeof explicit !== 'string' || explicit.trim().length === 0) {
+    return null;
+  }
+  return path.resolve(explicit.trim());
+}
+
+function readLocalJson<T>(absolutePath: string): T {
+  return JSON.parse(fs.readFileSync(absolutePath, 'utf8')) as T;
+}
 
 function asObject(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -434,15 +453,24 @@ function getProgram(codama: CodamaDocument): JsonRecord {
 async function loadJsonByPath<T>(filePath: string): Promise<T> {
   const cacheKey = filePath;
   if (!codamaFetchCache.has(cacheKey)) {
-    codamaFetchCache.set(
-      cacheKey,
-      fetch(resolveAppUrl(filePath)).then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`Failed to load JSON from ${filePath}.`);
-        }
-        return (await response.json()) as JsonRecord;
-      }),
-    );
+    const localRegistryPath = resolveLocalRegistryPath();
+    if (localRegistryPath) {
+      if (!filePath.startsWith('/idl/')) {
+        throw new Error(`Local runtime registry only supports /idl/* JSON paths. Got ${filePath}.`);
+      }
+      const resolvedPath = path.resolve(path.dirname(localRegistryPath), filePath.slice('/idl/'.length));
+      codamaFetchCache.set(cacheKey, Promise.resolve(readLocalJson<JsonRecord>(resolvedPath)));
+    } else {
+      codamaFetchCache.set(
+        cacheKey,
+        fetch(resolveAppUrl(filePath)).then(async (response) => {
+          if (!response.ok) {
+            throw new Error(`Failed to load JSON from ${filePath}.`);
+          }
+          return (await response.json()) as JsonRecord;
+        }),
+      );
+    }
   }
   return (await codamaFetchCache.get(cacheKey)!) as T;
 }

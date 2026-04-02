@@ -18,6 +18,7 @@ import {
 import { DirectAccountsCoder } from './directAccountsCoder.js';
 import {
   hydrateAndValidateRuntimeInputs,
+  type MaterializedOperationStep,
   type MaterializedRuntimeOperation,
   type RuntimeOperationExplain,
   type RuntimePack,
@@ -487,6 +488,59 @@ async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknow
     const coder = new DirectAccountsCoder(ctx.idl);
     return normalizeRuntimeValue(coder.decode(accountType, info.data));
   }
+  if (step.kind === 'decode_accounts') {
+    const rawAddresses = resolveTemplateValue(step.addresses, ctx.scope);
+    if (!Array.isArray(rawAddresses)) {
+      throw new Error(`decode_accounts:${step.name}:addresses must resolve to an array.`);
+    }
+    const accountType = asString(step.account_type, `decode_accounts:${step.name}:account_type`);
+    const coder = new DirectAccountsCoder(ctx.idl);
+    const decoded = [];
+    for (let index = 0; index < rawAddresses.length; index += 1) {
+      const address = asPubkey(rawAddresses[index], `decode_accounts:${step.name}:addresses[${index}]`);
+      const info = await ctx.connection.getAccountInfo(address, 'confirmed');
+      if (!info) {
+        throw new Error(`Account not found for decode_accounts ${step.name}[${index}]: ${address.toBase58()}`);
+      }
+      let value: unknown;
+      if (accountType === 'Mint') {
+        const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+        const mint = unpackMint(address, info, programId);
+        value = {
+          address: mint.address,
+          mintAuthority: mint.mintAuthority,
+          supply: mint.supply,
+          decimals: mint.decimals,
+          isInitialized: mint.isInitialized,
+          freezeAuthority: mint.freezeAuthority,
+        };
+      } else if (accountType === 'TokenAccount') {
+        const programId = info.owner.equals(TOKEN_2022_PROGRAM_ID) ? TOKEN_2022_PROGRAM_ID : TOKEN_PROGRAM_ID;
+        const token = unpackAccount(address, info, programId);
+        value = {
+          address: token.address,
+          mint: token.mint,
+          owner: token.owner,
+          amount: token.amount,
+          delegate: token.delegate,
+          delegatedAmount: token.delegatedAmount,
+          isInitialized: token.isInitialized,
+          isFrozen: token.isFrozen,
+          isNative: token.isNative,
+          rentExemptReserve: token.rentExemptReserve,
+          closeAuthority: token.closeAuthority,
+        };
+      } else {
+        const decodedValue = normalizeRuntimeValue(coder.decode(accountType, info.data));
+        value =
+          decodedValue && typeof decodedValue === 'object' && !Array.isArray(decodedValue)
+            ? { address: address.toBase58(), ...(decodedValue as JsonRecord) }
+            : { address: address.toBase58(), value: decodedValue };
+      }
+      decoded.push(normalizeRuntimeValue(value));
+    }
+    return decoded;
+  }
   if (step.kind === 'account_owner') {
     const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `account_owner:${step.name}:address`);
     const info = await ctx.connection.getAccountInfo(address, 'confirmed');
@@ -541,6 +595,29 @@ async function runComputeStep(step: TransformStep, ctx: ResolverContext): Promis
   );
 }
 
+async function runOperationSteps(
+  steps: MaterializedOperationStep[],
+  ctx: ResolverContext,
+  scope: JsonRecord,
+  derived: Record<string, unknown>,
+): Promise<void> {
+  for (const entry of steps) {
+    if (entry.phase === 'load') {
+      const step = entry.step as LoadStep;
+      const value = await runResolver(step, ctx);
+      derived[step.name] = value;
+      scope[step.name] = value;
+      scope.derived = derived;
+      continue;
+    }
+    const step = entry.step as TransformStep;
+    const value = await runComputeStep(step, ctx);
+    derived[step.name] = value;
+    scope[step.name] = value;
+    scope.derived = derived;
+  }
+}
+
 export async function prepareRuntimeOperation(options: {
   protocolId: string;
   operationId: string;
@@ -585,18 +662,7 @@ export async function prepareRuntimeOperation(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.load as LoadStep[]) {
-    const value = await runResolver(step, resolverCtx);
-    derived[step.name] = value;
-    scope[step.name] = value;
-    scope.derived = derived;
-  }
-  for (const step of operation.transform as TransformStep[]) {
-    const value = await runComputeStep(step, resolverCtx);
-    derived[step.name] = value;
-    scope[step.name] = value;
-    scope.derived = derived;
-  }
+  await runOperationSteps(operation.steps, resolverCtx, scope, derived);
   const resolvedArgs = normalizeRuntimeValue(resolveTemplateValue(operation.args ?? {}, scope));
   const resolvedAccounts = normalizeRuntimeValue(resolveTemplateValue(operation.accounts ?? {}, scope));
   const resolvedRemainingAccounts = normalizeRuntimeValue(resolveTemplateValue(operation.remainingAccounts ?? [], scope));
@@ -672,18 +738,7 @@ export async function runRuntimeView(options: {
     walletPublicKey: options.walletPublicKey,
     scope,
   };
-  for (const step of operation.load as LoadStep[]) {
-    const value = await runResolver(step, resolverCtx);
-    derived[step.name] = value;
-    scope[step.name] = value;
-    scope.derived = derived;
-  }
-  for (const step of operation.transform as TransformStep[]) {
-    const value = await runComputeStep(step, resolverCtx);
-    derived[step.name] = value;
-    scope[step.name] = value;
-    scope.derived = derived;
-  }
+  await runOperationSteps(operation.steps, resolverCtx, scope, derived);
 
   const resolvedArgs = normalizeRuntimeValue(resolveTemplateValue(operation.args ?? {}, scope));
   const resolvedAccounts = normalizeRuntimeValue(resolveTemplateValue(operation.accounts ?? {}, scope));

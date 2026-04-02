@@ -55,6 +55,18 @@ type RemainingAccountMeta = {
   isWritable?: boolean;
 };
 
+type RuntimeLoadStepSpec = Record<string, unknown> & {
+  name: string;
+  kind: string;
+};
+
+type RuntimeTransformStepSpec = {
+  kind: 'transform';
+  transform: string;
+};
+
+type RuntimeOperationStepSpec = RuntimeLoadStepSpec | RuntimeTransformStepSpec;
+
 type AgentViewSpec = {
   load_instruction?: string;
   load_instruction_bindings?: {
@@ -62,16 +74,14 @@ type AgentViewSpec = {
     accounts?: Record<string, string>;
   };
   inputs?: Record<string, RuntimeInputDecl>;
-  load?: unknown[];
-  transform?: string[];
+  steps?: RuntimeOperationStepSpec[];
   output: ReadOutputSpec;
 };
 
 type AgentWriteSpec = {
   instruction: string;
   inputs?: Record<string, RuntimeInputSpec>;
-  load?: unknown[];
-  transform?: string[];
+  steps?: RuntimeOperationStepSpec[];
   args?: Record<string, ArgBindingValue>;
   accounts?: Record<string, string>;
   remaining_accounts?: string | RemainingAccountMeta[];
@@ -113,8 +123,7 @@ export type MaterializedRuntimeOperation = {
   instruction: string | null;
   loadInstruction: string | null;
   inputs: Record<string, RuntimeInputSpec>;
-  load: unknown[];
-  transform: unknown[];
+  steps: MaterializedOperationStep[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   loadInstructionArgs: Record<string, unknown>;
@@ -152,8 +161,7 @@ export type RuntimeOperationExplain = {
   instruction?: string;
   loadInstruction?: string;
   inputs: Record<string, RuntimeInputSpec>;
-  load: unknown[];
-  transform: unknown[];
+  steps: MaterializedOperationStep[];
   args: Record<string, unknown>;
   accounts: Record<string, unknown>;
   loadInstructionArgs: Record<string, unknown>;
@@ -170,7 +178,22 @@ export type RuntimeOperationExplain = {
   post: unknown[];
 };
 
+export type MaterializedOperationStep =
+  | {
+      phase: 'load';
+      step: RuntimeLoadStepSpec;
+    }
+  | {
+      phase: 'transform';
+      step: Record<string, unknown>;
+      fragment: string;
+    };
+
 const runtimePackCache = new Map<string, RuntimePack>();
+
+function isTransformStepSpec(step: RuntimeOperationStepSpec): step is RuntimeTransformStepSpec {
+  return step.kind === 'transform';
+}
 
 function toSnakeCase(value: string): string {
   return value
@@ -208,62 +231,36 @@ function resolvePath(scope: JsonRecord, path: string): unknown {
   return resolved;
 }
 
-function mergeMaterializedFragment(
-  target: MaterializedRuntimeOperation,
-  fragment: Partial<AgentViewSpec & AgentWriteSpec>,
-): void {
-  if ('load_instruction' in fragment && fragment.load_instruction) {
-    target.loadInstruction = fragment.load_instruction;
-  }
-  if ('load_instruction_bindings' in fragment && fragment.load_instruction_bindings) {
-    if (fragment.load_instruction_bindings.args) {
-      target.loadInstructionArgs = {
-        ...target.loadInstructionArgs,
-        ...cloneJsonLike(fragment.load_instruction_bindings.args),
-      };
+function buildMaterializedOperationSteps(options: {
+  protocolId: string;
+  operationId: string;
+  catalog: Record<string, unknown[]>;
+  steps: RuntimeOperationStepSpec[] | undefined;
+}): MaterializedOperationStep[] {
+  const out: MaterializedOperationStep[] = [];
+  for (const [index, rawStep] of (options.steps ?? []).entries()) {
+    if (isTransformStepSpec(rawStep)) {
+      const fragment = options.catalog[rawStep.transform];
+      if (!Array.isArray(fragment)) {
+        throw new Error(
+          `Unknown transform fragment ${rawStep.transform} in ${options.protocolId}/${options.operationId} at steps[${index}].`,
+        );
+      }
+      for (const transformed of cloneJsonLike(fragment)) {
+        out.push({
+          phase: 'transform',
+          step: transformed as Record<string, unknown>,
+          fragment: rawStep.transform,
+        });
+      }
+      continue;
     }
-    if (fragment.load_instruction_bindings.accounts) {
-      target.loadInstructionAccounts = {
-        ...target.loadInstructionAccounts,
-        ...cloneJsonLike(fragment.load_instruction_bindings.accounts),
-      };
-    }
+    out.push({
+      phase: 'load',
+      step: cloneJsonLike(rawStep as RuntimeLoadStepSpec),
+    });
   }
-  if ('instruction' in fragment && fragment.instruction) {
-    target.instruction = fragment.instruction;
-  }
-  if (fragment.inputs) {
-    target.inputs = { ...target.inputs, ...normalizeInputDeclMap(fragment.inputs) };
-  }
-  if (fragment.load) {
-    target.load.push(...cloneJsonLike(fragment.load));
-  }
-  if (fragment.transform) {
-    target.transform.push(...cloneJsonLike(fragment.transform));
-  }
-  if (fragment.args) {
-    target.args = { ...target.args, ...cloneJsonLike(fragment.args) };
-  }
-  if (fragment.accounts) {
-    target.accounts = { ...target.accounts, ...cloneJsonLike(fragment.accounts) };
-  }
-  if (fragment.remaining_accounts !== undefined) {
-    const cloned = cloneJsonLike(fragment.remaining_accounts);
-    if (Array.isArray(cloned) && Array.isArray(target.remainingAccounts)) {
-      target.remainingAccounts.push(...cloned);
-    } else {
-      target.remainingAccounts = cloned;
-    }
-  }
-  if ('output' in fragment && fragment.output) {
-    target.output = cloneJsonLike(fragment.output);
-  }
-  if (fragment.pre && fragment.pre.length > 0) {
-    target.pre = [...(target.pre ?? []), ...cloneJsonLike(fragment.pre)];
-  }
-  if (fragment.post && fragment.post.length > 0) {
-    target.post = [...(target.post ?? []), ...cloneJsonLike(fragment.post)];
-  }
+  return out;
 }
 
 function normalizeInputDeclMap(
@@ -302,25 +299,23 @@ function collectInputReferences(value: unknown, refs: Set<string>): void {
   }
 }
 
-function expandReferencedTransformSteps(
-  transformRefs: string[] | undefined,
-  catalog: Record<string, unknown[]>,
-): unknown[] {
-  const expanded: unknown[] = [];
-  for (const ref of transformRefs ?? []) {
-    const fragment = catalog[ref];
-    if (!Array.isArray(fragment)) {
-      throw new Error(`Unknown transform fragment ${ref}.`);
+function collectStepInputReferences(steps: RuntimeOperationStepSpec[] | undefined, catalog: Record<string, unknown[]>, refs: Set<string>): void {
+  for (const [index, step] of (steps ?? []).entries()) {
+    if (isTransformStepSpec(step)) {
+      const fragment = catalog[step.transform];
+      if (!Array.isArray(fragment)) {
+        throw new Error(`Unknown transform fragment ${step.transform} at steps[${index}].`);
+      }
+      collectInputReferences(fragment, refs);
+      continue;
     }
-    expanded.push(...cloneJsonLike(fragment));
+    collectInputReferences(step, refs);
   }
-  return expanded;
 }
 
 function collectWriteInputReferences(spec: AgentWriteSpec, catalog: Record<string, unknown[]>): Set<string> {
   const refs = new Set<string>();
-  collectInputReferences(spec.load, refs);
-  collectInputReferences(expandReferencedTransformSteps(spec.transform, catalog), refs);
+  collectStepInputReferences(spec.steps, catalog, refs);
   collectInputReferences(spec.args, refs);
   collectInputReferences(spec.accounts, refs);
   collectInputReferences(spec.remaining_accounts, refs);
@@ -429,23 +424,6 @@ async function hydrateWriteSpecsFromCodama(options: {
   return nextWrites;
 }
 
-function expandTransformPipeline(options: {
-  protocolId: string;
-  operationId: string;
-  catalog: Record<string, unknown[]>;
-  pipeline: string[];
-}): unknown[] {
-  const expanded: unknown[] = [];
-  for (const [index, entry] of options.pipeline.entries()) {
-    const fragment = options.catalog[entry];
-    if (!Array.isArray(fragment)) {
-      throw new Error(`Unknown transform fragment ${entry} in ${options.protocolId}/${options.operationId} at transform[${index}].`);
-    }
-    expanded.push(...cloneJsonLike(fragment));
-  }
-  return expanded;
-}
-
 export async function loadRuntimePack(protocolId: string): Promise<RuntimePack> {
   const cached = runtimePackCache.get(protocolId);
   if (cached) {
@@ -530,8 +508,7 @@ export function materializeRuntimeOperation(
     instruction: null,
     loadInstruction: null,
     inputs: {},
-    load: [],
-    transform: [],
+    steps: [],
     args: {},
     accounts: {},
     loadInstructionArgs: {},
@@ -541,13 +518,47 @@ export function materializeRuntimeOperation(
     post: [],
   };
 
-  mergeMaterializedFragment(materialized, cloneJsonLike(operation as Partial<AgentViewSpec & AgentWriteSpec>));
-  const transformRefs = cloneJsonLike(materialized.transform) as string[];
-  materialized.transform = expandTransformPipeline({
+  const cloned = cloneJsonLike(operation as Partial<AgentViewSpec & AgentWriteSpec>);
+  if ('load_instruction' in cloned && cloned.load_instruction) {
+    materialized.loadInstruction = cloned.load_instruction;
+  }
+  if ('load_instruction_bindings' in cloned && cloned.load_instruction_bindings) {
+    if (cloned.load_instruction_bindings.args) {
+      materialized.loadInstructionArgs = cloneJsonLike(cloned.load_instruction_bindings.args);
+    }
+    if (cloned.load_instruction_bindings.accounts) {
+      materialized.loadInstructionAccounts = cloneJsonLike(cloned.load_instruction_bindings.accounts);
+    }
+  }
+  if ('instruction' in cloned && cloned.instruction) {
+    materialized.instruction = cloned.instruction;
+  }
+  if (cloned.inputs) {
+    materialized.inputs = normalizeInputDeclMap(cloned.inputs);
+  }
+  if (cloned.args) {
+    materialized.args = cloneJsonLike(cloned.args);
+  }
+  if (cloned.accounts) {
+    materialized.accounts = cloneJsonLike(cloned.accounts);
+  }
+  if (cloned.remaining_accounts !== undefined) {
+    materialized.remainingAccounts = cloneJsonLike(cloned.remaining_accounts);
+  }
+  if ('output' in cloned && cloned.output) {
+    materialized.output = cloneJsonLike(cloned.output);
+  }
+  if (cloned.pre && cloned.pre.length > 0) {
+    materialized.pre = cloneJsonLike(cloned.pre);
+  }
+  if (cloned.post && cloned.post.length > 0) {
+    materialized.post = cloneJsonLike(cloned.post);
+  }
+  materialized.steps = buildMaterializedOperationSteps({
     protocolId: pack.protocolId,
     operationId,
     catalog: cloneJsonLike(pack.transforms ?? {}),
-    pipeline: transformRefs,
+    steps: cloned.steps,
   });
 
   return materialized;
@@ -802,8 +813,7 @@ export async function explainRuntimeOperation(options: {
     ...(resolved.kind === 'write' && materialized.instruction ? { instruction: materialized.instruction } : {}),
     ...(resolved.kind === 'view' && materialized.loadInstruction ? { loadInstruction: materialized.loadInstruction } : {}),
     inputs: cloneJsonLike(materialized.inputs),
-    load: cloneJsonLike(materialized.load),
-    transform: cloneJsonLike(materialized.transform),
+    steps: cloneJsonLike(materialized.steps),
     args: cloneJsonLike(materialized.args),
     accounts: cloneJsonLike(materialized.accounts),
     loadInstructionArgs: cloneJsonLike(materialized.loadInstructionArgs),
