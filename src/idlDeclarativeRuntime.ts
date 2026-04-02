@@ -69,7 +69,7 @@ type IdlTypeDef = {
   type?: {
     kind?: string;
     fields?: IdlStructField[];
-    variants?: Array<{ name: string }>;
+    variants?: Array<{ name: string; fields?: IdlStructField[] | IdlTypeRef[] }>;
   };
 };
 
@@ -136,6 +136,10 @@ function toSnakeCaseKey(value: string): string {
     .toLowerCase();
 }
 
+function toCamelCaseKey(value: string): string {
+  return value.replace(/[_-]([a-z0-9])/g, (_match, char: string) => char.toUpperCase());
+}
+
 function findInstructionByName(idl: Idl, instructionName: string): IdlInstruction {
   const instruction = findCodamaInstructionByName(idl, instructionName) as unknown as IdlInstruction | null;
 
@@ -176,11 +180,29 @@ function getArgInputValue(input: Record<string, unknown>, argName: string): unkn
     return input[snake];
   }
 
+  const camel = toCamelCaseKey(argName);
+  if (input[camel] !== undefined) {
+    return input[camel];
+  }
+
   return undefined;
 }
 
 function findDefinedTypeByName(idl: Idl, name: string): IdlTypeDef | null {
   return findCodamaTypeDefByName(idl, name) as unknown as IdlTypeDef | null;
+}
+
+function findEnumVariantByName(
+  variants: Array<{ name: string; fields?: IdlStructField[] | IdlTypeRef[] }>,
+  rawName: string,
+): { name: string; fields?: IdlStructField[] | IdlTypeRef[] } | null {
+  const normalized = toSnakeCaseKey(rawName);
+  return (
+    variants.find((variant) => variant.name === rawName) ??
+    variants.find((variant) => toSnakeCaseKey(variant.name) === normalized) ??
+    variants.find((variant) => toCamelCaseKey(variant.name) === rawName) ??
+    null
+  );
 }
 
 function normalizeValueByIdlType(idl: Idl, type: IdlTypeRef | unknown, value: unknown): unknown {
@@ -299,6 +321,75 @@ function normalizeValueByIdlType(idl: Idl, type: IdlTypeRef | unknown, value: un
         });
 
         return Object.fromEntries(normalizedFields);
+      }
+
+      if (typeDef.type?.kind === 'enum') {
+        const variants = typeDef.type.variants ?? [];
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          throw new Error(`Expected object for defined enum ${definedName}.`);
+        }
+
+        const input = value as Record<string, unknown>;
+        let variant = null as { name: string; fields?: IdlStructField[] | IdlTypeRef[] } | null;
+        let variantPayload: unknown = undefined;
+
+        if (typeof input.__kind === 'string') {
+          variant = findEnumVariantByName(variants, input.__kind);
+          variantPayload = getArgInputValue(input, input.__kind) ?? input;
+        } else {
+          for (const candidate of variants) {
+            const candidateValue = getArgInputValue(input, candidate.name);
+            if (candidateValue !== undefined) {
+              variant = candidate;
+              variantPayload = candidateValue;
+              break;
+            }
+          }
+        }
+
+        if (!variant) {
+          throw new Error(`Cannot resolve enum variant for defined enum ${definedName}.`);
+        }
+
+        const fields = variant.fields ?? [];
+        if (fields.length === 0) {
+          return { [variant.name]: {} };
+        }
+
+        const hasNamedFields = fields.every(
+          (field) => typeof field === 'object' && field !== null && 'name' in field && 'type' in field,
+        );
+
+        if (hasNamedFields) {
+          const source =
+            variantPayload && typeof variantPayload === 'object' && !Array.isArray(variantPayload)
+              ? (variantPayload as Record<string, unknown>)
+              : input;
+          const normalizedFields = (fields as IdlStructField[]).map((field) => {
+            const fieldValue = getArgInputValue(source, field.name);
+            if (fieldValue === undefined) {
+              throw new Error(`Missing field ${field.name} in enum variant ${variant.name}.`);
+            }
+            return [field.name, normalizeValueByIdlType(idl, field.type, fieldValue)] as const;
+          });
+          return { [variant.name]: Object.fromEntries(normalizedFields) };
+        }
+
+        const tupleSource =
+          Array.isArray(variantPayload)
+            ? variantPayload
+            : Array.isArray((variantPayload as Record<string, unknown> | undefined)?.fields)
+              ? ((variantPayload as Record<string, unknown>).fields as unknown[])
+              : Array.isArray(input.fields)
+                ? input.fields
+                : variantPayload === undefined
+                  ? []
+                  : [variantPayload];
+
+        const normalizedItems = (fields as IdlTypeRef[]).map((fieldType, index) =>
+          normalizeValueByIdlType(idl, fieldType, tupleSource[index]),
+        );
+        return { [variant.name]: normalizedItems };
       }
 
       return value;
