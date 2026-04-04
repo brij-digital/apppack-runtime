@@ -96,6 +96,28 @@ function readLocalJson<T>(absolutePath: string): T {
   return JSON.parse(fs.readFileSync(absolutePath, 'utf8')) as T;
 }
 
+function resolveLocalJsonPath(localRegistryPath: string, filePath: string): string {
+  if (!filePath.startsWith('/')) {
+    throw new Error(`Local runtime registry only supports root-relative JSON paths. Got ${filePath}.`);
+  }
+
+  const registryDir = path.dirname(localRegistryPath);
+  if (filePath.startsWith('/idl/')) {
+    const relativePath = filePath.slice('/idl/'.length);
+    const siblingPath = path.resolve(registryDir, relativePath);
+    if (fs.existsSync(siblingPath)) {
+      return siblingPath;
+    }
+
+    const nestedIdlPath = path.resolve(registryDir, 'idl', relativePath);
+    if (fs.existsSync(nestedIdlPath)) {
+      return nestedIdlPath;
+    }
+  }
+
+  return path.resolve(registryDir, filePath.slice(1));
+}
+
 function asObject(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     throw new Error(`${label} must be an object.`);
@@ -455,10 +477,7 @@ async function loadJsonByPath<T>(filePath: string): Promise<T> {
   if (!codamaFetchCache.has(cacheKey)) {
     const localRegistryPath = resolveLocalRegistryPath();
     if (localRegistryPath) {
-      if (!filePath.startsWith('/idl/')) {
-        throw new Error(`Local runtime registry only supports /idl/* JSON paths. Got ${filePath}.`);
-      }
-      const resolvedPath = path.resolve(path.dirname(localRegistryPath), filePath.slice('/idl/'.length));
+      const resolvedPath = resolveLocalJsonPath(localRegistryPath, filePath);
       codamaFetchCache.set(cacheKey, Promise.resolve(readLocalJson<JsonRecord>(resolvedPath)));
     } else {
       codamaFetchCache.set(

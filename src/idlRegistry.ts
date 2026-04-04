@@ -85,6 +85,28 @@ function readLocalJson<T>(absolutePath: string): T {
   return JSON.parse(fs.readFileSync(absolutePath, 'utf8')) as T;
 }
 
+function resolveLocalJsonPath(localRegistryPath: string, filePath: string): string {
+  if (!filePath.startsWith('/')) {
+    throw new Error(`Local runtime registry only supports root-relative JSON paths. Got ${filePath}.`);
+  }
+
+  const registryDir = path.dirname(localRegistryPath);
+  if (filePath.startsWith('/idl/')) {
+    const relativePath = filePath.slice('/idl/'.length);
+    const siblingPath = path.resolve(registryDir, relativePath);
+    if (fs.existsSync(siblingPath)) {
+      return siblingPath;
+    }
+
+    const nestedIdlPath = path.resolve(registryDir, 'idl', relativePath);
+    if (fs.existsSync(nestedIdlPath)) {
+      return nestedIdlPath;
+    }
+  }
+
+  return path.resolve(registryDir, filePath.slice(1));
+}
+
 export async function loadRegistry(): Promise<RegistryShape> {
   if (registryCache) {
     return registryCache;
@@ -124,10 +146,7 @@ export async function getProtocolById(protocolId: string): Promise<ProtocolManif
 async function loadJsonByPath<T>(filePath: string): Promise<T> {
   const localRegistryPath = resolveLocalRegistryPath();
   if (localRegistryPath) {
-    if (!filePath.startsWith('/idl/')) {
-      throw new Error(`Local runtime registry only supports /idl/* JSON paths. Got ${filePath}.`);
-    }
-    const resolvedPath = path.resolve(path.dirname(localRegistryPath), filePath.slice('/idl/'.length));
+    const resolvedPath = resolveLocalJsonPath(localRegistryPath, filePath);
     return readLocalJson<T>(resolvedPath);
   }
 

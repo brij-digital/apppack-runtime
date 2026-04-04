@@ -16,27 +16,33 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./idlDeclarativeRuntime": {
       "types": "./dist/idlDeclarativeRuntime.d.ts",
-      "import": "./dist/idlDeclarativeRuntime.js"
+      "import": "./dist/idlDeclarativeRuntime.js",
+      "default": "./dist/idlDeclarativeRuntime.js"
     },
     "./runtimeOperationRuntime": {
       "types": "./dist/runtimeOperationRuntime.d.ts",
-      "import": "./dist/runtimeOperationRuntime.js"
+      "import": "./dist/runtimeOperationRuntime.js",
+      "default": "./dist/runtimeOperationRuntime.js"
     },
     "./idlRegistry": {
       "types": "./dist/idlRegistry.d.ts",
-      "import": "./dist/idlRegistry.js"
+      "import": "./dist/idlRegistry.js",
+      "default": "./dist/idlRegistry.js"
     },
     "./codamaIdl": {
       "types": "./dist/codamaIdl.d.ts",
-      "import": "./dist/codamaIdl.js"
+      "import": "./dist/codamaIdl.js",
+      "default": "./dist/codamaIdl.js"
     },
     "./metaComputeRegistry": {
       "types": "./dist/metaComputeRegistry.d.ts",
-      "import": "./dist/metaComputeRegistry.js"
+      "import": "./dist/metaComputeRegistry.js",
+      "default": "./dist/metaComputeRegistry.js"
     },
     "./schemas/*": "./schemas/*"
   },
