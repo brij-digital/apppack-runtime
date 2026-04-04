@@ -9,6 +9,8 @@ export type ProtocolManifest = {
   programId: string;
   codamaIdlPath?: string;
   agentRuntimePath?: string;
+  ingestSpecPath?: string | null;
+  indexedReadsPath?: string;
   indexingSpecPath?: string;
   transport: string;
   supportedCommands: string[];
@@ -39,7 +41,7 @@ type ReadOutputSpec = {
   scalar_type?: string;
 };
 
-type IndexingSpecShape = {
+type IndexedReadsSpecShape = {
   schema: string;
   protocolId: string;
   decoderArtifacts?: Record<string, RuntimeDecoderArtifact>;
@@ -64,7 +66,7 @@ type AgentRuntimeShape = {
 };
 
 let registryCache: RegistryShape | null = null;
-const indexingSpecCache = new Map<string, IndexingSpecShape | null>();
+const indexingSpecCache = new Map<string, IndexedReadsSpecShape | null>();
 const agentRuntimeCache = new Map<string, AgentRuntimeShape | null>();
 
 function resolveLocalRegistryPath(): string | null {
@@ -137,23 +139,24 @@ async function loadJsonByPath<T>(filePath: string): Promise<T> {
   return (await response.json()) as T;
 }
 
-export async function loadProtocolIndexingSpec(protocolId: string): Promise<IndexingSpecShape | null> {
+export async function loadProtocolIndexingSpec(protocolId: string): Promise<IndexedReadsSpecShape | null> {
   if (indexingSpecCache.has(protocolId)) {
     return indexingSpecCache.get(protocolId)!;
   }
 
   const manifest = await getProtocolById(protocolId);
-  if (!manifest.indexingSpecPath) {
+  const indexedReadsPath = manifest.indexedReadsPath ?? manifest.indexingSpecPath;
+  if (!indexedReadsPath) {
     indexingSpecCache.set(protocolId, null);
     return null;
   }
 
-  const parsed = await loadJsonByPath<IndexingSpecShape>(manifest.indexingSpecPath);
+  const parsed = await loadJsonByPath<IndexedReadsSpecShape>(indexedReadsPath);
   if (parsed.schema !== 'declarative-decoder-runtime.v1') {
-    throw new Error(`Protocol ${protocolId} indexing spec at ${manifest.indexingSpecPath} is not declarative-decoder-runtime.v1.`);
+    throw new Error(`Protocol ${protocolId} indexed reads spec at ${indexedReadsPath} is not declarative-decoder-runtime.v1.`);
   }
   if (parsed.protocolId !== protocolId) {
-    throw new Error(`Protocol ${protocolId} indexing spec protocolId mismatch: ${parsed.protocolId}.`);
+    throw new Error(`Protocol ${protocolId} indexed reads spec protocolId mismatch: ${parsed.protocolId}.`);
   }
 
   indexingSpecCache.set(protocolId, parsed);

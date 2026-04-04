@@ -5,3 +5,4 @@ export * from './idlRegistry.js';
 export * from './codamaIdl.js';
 export * from './directAccountsCoder.js';
 export * from './directInstructionCoder.js';
+export * from './metaComputeRegistry.js';

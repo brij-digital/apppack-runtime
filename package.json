@@ -34,6 +34,10 @@
       "types": "./dist/codamaIdl.d.ts",
       "import": "./dist/codamaIdl.js"
     },
+    "./metaComputeRegistry": {
+      "types": "./dist/metaComputeRegistry.d.ts",
+      "import": "./dist/metaComputeRegistry.js"
+    },
     "./schemas/*": "./schemas/*"
   },
   "scripts": {
