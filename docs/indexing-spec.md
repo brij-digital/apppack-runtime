@@ -202,6 +202,13 @@ Each operation defines an indexed read surface.
 | `ranking` | Scored/sorted items | filter, sort, score |
 | `search` | Filterable state queries | filter, sort |
 
+### Freshness
+
+- `active_window_days` controls the default view window for canonical reads.
+- State freshness is computed from `last_updated_at`, which is set on every state emit.
+- If `last_updated_at` is null, readers fall back to `last_event_time`, then `updated_at`.
+- In V1, `resource_id` is the implicit authoritative anchor for account-backed freshness updates.
+
 ---
 
 ## Unsupported in V1 authoring
