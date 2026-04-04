@@ -1,11 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { PublicKey } from '@solana/web3.js';
 import { previewIdlInstruction } from '../dist/index.js';
 
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
 process.env.APPPACK_RUNTIME_REGISTRY_PATH = path.resolve(
-  '/Users/antoine/Documents/github/Espresso Cash/ec-ai-wallet/public/idl/registry.json',
+  __dirname,
+  '../../ec-ai-wallet/public/idl/registry.json',
 );
 
 test('previewIdlInstruction normalizes defined enum args from SDK-style __kind shape', async () => {
