@@ -10,7 +10,7 @@ const __dirname = path.dirname(__filename);
 
 process.env.APPPACK_RUNTIME_REGISTRY_PATH = path.resolve(
   __dirname,
-  '../../ec-ai-wallet/public/idl/registry.json',
+  '../../protocol-ui/public/idl/registry.json',
 );
 
 test('previewIdlInstruction normalizes defined enum args from SDK-style __kind shape', async () => {

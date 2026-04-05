@@ -3,8 +3,8 @@
 Shared runtime package for AppPack protocol execution.
 
 Used by:
-- `ec-ai-wallet` (browser app)
-- `apppack-view-service` (node read/index service)
+- `protocol-ui` (browser app repo)
+- `protocol-indexing` (node read/index service repo)
 
 ## Shared Schemas
 
@@ -29,9 +29,9 @@ If you need to change a shared schema:
 ## Repo Relationship
 
 These are the three main AppPack repositories:
-- `apppack-runtime`: shared runtime package published via GitHub Packages
-- `ec-ai-wallet`: browser app consuming the published runtime package
-- `apppack-view-service`: node API/worker consuming the published runtime package
+- `protocol-runtime`: shared runtime package repo published via GitHub Packages
+- `protocol-ui`: browser app repo consuming the published runtime package
+- `protocol-indexing`: node API/worker repo consuming the published runtime package
 
 Downstream apps should install the runtime from GitHub Packages under the `@brij-digital` scope.
 
@@ -104,6 +104,6 @@ See [RELEASING.md](RELEASING.md) for the exact release flow.
 ## Product Direction
 
 AppPack should be treated primarily as an agent-native execution platform with:
-- `apppack-runtime` as the shared protocol execution core
-- `apppack-view-service` as the indexed read/search backend
-- `ec-ai-wallet` as the reference client and pack-authoring surface
+- `protocol-runtime` as the shared protocol execution repo
+- `protocol-indexing` as the indexed read/search repo
+- `protocol-ui` as the reference client and pack-authoring repo
