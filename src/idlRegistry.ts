@@ -9,10 +9,23 @@ export type ProtocolManifest = {
   programId: string;
   codamaIdlPath?: string;
   agentRuntimePath?: string;
-  ingestSpecPath?: string | null;
   indexedReadsPath?: string;
   transport: string;
   supportedCommands: string[];
+  status: 'active' | 'inactive';
+};
+
+export type IndexingSourceManifest = {
+  id: string;
+  protocolId: string;
+  ingestSpecPath: string;
+  dependsOn?: string[];
+};
+
+export type IndexingManifest = {
+  id: string;
+  entitySchemaPath?: string;
+  sources: IndexingSourceManifest[];
   status: 'active' | 'inactive';
 };
 
@@ -20,6 +33,7 @@ type RegistryShape = {
   version: string;
   globalCommands?: string[];
   protocols: ProtocolManifest[];
+  indexings?: IndexingManifest[];
 };
 
 type RuntimeDecoderArtifact = {
@@ -141,6 +155,30 @@ export async function getProtocolById(protocolId: string): Promise<ProtocolManif
   }
 
   return manifest;
+}
+
+export async function listIndexingSourcesForProtocol(protocolId: string): Promise<Array<IndexingSourceManifest & { indexingId: string }>> {
+  const registry = await loadRegistry();
+  const indexings = Array.isArray(registry.indexings) ? registry.indexings : [];
+  const matches: Array<IndexingSourceManifest & { indexingId: string }> = [];
+  for (const indexing of indexings) {
+    if (!indexing || indexing.status === 'inactive' || !Array.isArray(indexing.sources)) {
+      continue;
+    }
+    for (const source of indexing.sources) {
+      if (!source || source.protocolId !== protocolId || typeof source.ingestSpecPath !== 'string') {
+        continue;
+      }
+      matches.push({
+        indexingId: indexing.id,
+        id: source.id,
+        protocolId: source.protocolId,
+        ingestSpecPath: source.ingestSpecPath,
+        dependsOn: Array.isArray(source.dependsOn) ? source.dependsOn : undefined,
+      });
+    }
+  }
+  return matches;
 }
 
 async function loadJsonByPath<T>(filePath: string): Promise<T> {

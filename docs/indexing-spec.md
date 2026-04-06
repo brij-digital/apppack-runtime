@@ -32,17 +32,32 @@ Client request → [Indexed reads spec] → Filter/Sort/Aggregate → Response
 
 ## Registry fields
 
-Each protocol declares both paths in `registry.json`:
+`indexedReadsPath` stays on protocol manifests. Ingest specs now belong to canonical indexings:
 
 ```json
 {
-  "id": "pump-amm-mainnet",
-  "ingestSpecPath": "/idl/pump_amm.ingest.json",
-  "indexedReadsPath": "/idl/pump_amm.indexed-reads.json"
+  "protocols": [
+    {
+      "id": "pump-amm-mainnet",
+      "indexedReadsPath": "/idl/pump_amm.indexed-reads.json"
+    }
+  ],
+  "indexings": [
+    {
+      "id": "pump-amm-mainnet",
+      "sources": [
+        {
+          "id": "pump-amm",
+          "protocolId": "pump-amm-mainnet",
+          "ingestSpecPath": "/idl/pump_amm.ingest.json"
+        }
+      ]
+    }
+  ]
 }
 ```
 
-- `ingestSpecPath` — used by the Carbon plan compiler. `null` for protocols with no ingest (e.g. manual token index).
+- `indexings[].sources[].ingestSpecPath` — used by the Carbon plan compiler.
 - `indexedReadsPath` — used by the canonical view runner and query layer.
 
 ---
@@ -54,7 +69,7 @@ Each protocol declares both paths in `registry.json`:
 ```json
 {
   "schema": "declarative-decoder-runtime.v1",
-  "protocolId": "pump-amm-mainnet",
+  "sourceProtocolIds": ["pump-amm-mainnet"],
   "programId": "$protocol.programId",
   "decoderArtifacts": {},
   "sources": {},

@@ -673,7 +673,6 @@ export async function listIdlProtocols(): Promise<{
       programId: string;
       codamaIdlPath: string | null;
       agentRuntimePath: string | null;
-      ingestSpecPath: string | null;
       indexedReadsPath: string | null;
       supportedCommands: string[];
       status: 'active' | 'inactive';
@@ -692,7 +691,6 @@ export async function listIdlProtocols(): Promise<{
       programId: protocol.programId,
       codamaIdlPath: protocol.codamaIdlPath ?? null,
       agentRuntimePath: protocol.agentRuntimePath ?? null,
-      ingestSpecPath: protocol.ingestSpecPath ?? null,
       indexedReadsPath: protocol.indexedReadsPath ?? null,
       supportedCommands: protocol.supportedCommands ?? [],
       status: protocol.status,
