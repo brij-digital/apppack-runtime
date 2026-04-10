@@ -20,7 +20,7 @@ The old `*.indexed-reads.json` compatibility shape is removed.
 - `protocols[]` for protocol metadata, Codama, and runtime packs
 - `indexings[]` for indexing jobs
 - `indexings[].sources[]` for ingest source declarations
-- `indexings[].entitySchemaPath` for entity specs
+- `indexings[].entitySchemaPath` for entity directories
 
 ## Ingest Spec (`*.ingest.json`)
 
@@ -50,6 +50,12 @@ The ingest DSL is for canonical raw emission only. It does not define query surf
 ## Entity Specs (`*.entities.json`)
 
 Entity specs live in `protocol-registry/indexing/entities/` and are consumed by `protocol-indexing`.
+
+Authoring layout:
+
+- `indexing/entities/<indexingId>/<EntityName>.json`
+
+`registry.json` points at the entity directory. Consumers scan that directory and compile one flat entity document per `indexingId`.
 
 Each entity spec owns exactly one materialized table and uses a declarative transform pipeline:
 
