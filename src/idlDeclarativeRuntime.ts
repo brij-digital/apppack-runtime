@@ -19,7 +19,6 @@ import {
   type CodamaInstructionAccountDefault,
 } from './codamaIdl.js';
 import { DirectInstructionCoder } from './directInstructionCoder.js';
-import { isBnLike } from './bnLike.js';
 
 type IdlInstructionAccount = {
   name: string;
@@ -77,6 +76,11 @@ export type WalletLike = {
   signTransaction?: <T extends Transaction>(transaction: T) => Promise<T>;
 };
 
+type BnLike = {
+  toString(base?: number): string;
+  toArrayLike?: (arrayType: Uint8ArrayConstructor, endian: 'le' | 'be', length: number) => Uint8Array;
+};
+
 const idlCache = new Map<string, Idl>();
 const INTEGER_TYPES = new Set([
   'u8',
@@ -97,6 +101,24 @@ function toBase64(data: Uint8Array): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary);
+}
+
+function isBnLike(value: unknown): value is BnLike {
+  if (!value || typeof value !== 'object') {
+    return false;
+  }
+
+  const candidate = value as {
+    constructor?: { name?: string };
+    toString?: (base?: number) => string;
+    toArrayLike?: (arrayType: Uint8ArrayConstructor, endian: 'le' | 'be', length: number) => Uint8Array;
+  };
+
+  return (
+    candidate.constructor?.name === 'BN' &&
+    typeof candidate.toString === 'function' &&
+    typeof candidate.toArrayLike === 'function'
+  );
 }
 
 function serializeForUi(value: unknown): unknown {
