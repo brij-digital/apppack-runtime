@@ -343,6 +343,15 @@ test('runRuntimeView resolves load_instruction bindings through Codama account r
     destination: TARGET,
     treasury: TREASURY,
   });
+  assert.deepEqual(output.loadInstructionArgs, {
+    amount: '7',
+  });
+  assert.deepEqual(output.loadInstructionAccounts, {
+    authority: WALLET,
+    source_mint: SOURCE_MINT,
+    destination: TARGET,
+    treasury: TREASURY,
+  });
   assert.deepEqual(output.preInstructions, []);
   assert.deepEqual(output.postInstructions, []);
   assert.equal(output.outputSpec.source, '$instruction_accounts');

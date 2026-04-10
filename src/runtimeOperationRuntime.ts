@@ -326,6 +326,8 @@ export type PreparedMetaView = {
   operationId: string;
   derived: Record<string, unknown>;
   output: unknown;
+  loadInstructionArgs: Record<string, unknown>;
+  loadInstructionAccounts: Record<string, string>;
   preInstructions: PreparedPreInstruction[];
   postInstructions: PreparedPostInstruction[];
   outputSpec?: {
@@ -1700,6 +1702,8 @@ export async function runRuntimeView(options: {
     operationId: options.operationId,
     derived,
     output,
+    loadInstructionArgs: resolvedLoadInstructionArgs as Record<string, unknown>,
+    loadInstructionAccounts: finalAccounts,
     preInstructions: resolvePreInstructions(operation.pre as PreInstructionSpec[] | undefined, scope),
     postInstructions: resolvePostInstructions(operation.post as PostInstructionSpec[] | undefined, scope),
     outputSpec: normalizeReadOutputSpec(operation.output, `${options.protocolId}/${options.operationId}`),
