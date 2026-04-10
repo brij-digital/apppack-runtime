@@ -1,6 +1,6 @@
 {
   "name": "@brij-digital/apppack-runtime",
-  "version": "0.2.8",
+  "version": "0.3.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -29,15 +29,15 @@
       "import": "./dist/runtimeOperationRuntime.js",
       "default": "./dist/runtimeOperationRuntime.js"
     },
-    "./idlRegistry": {
-      "types": "./dist/idlRegistry.d.ts",
-      "import": "./dist/idlRegistry.js",
-      "default": "./dist/idlRegistry.js"
+    "./actionRunner": {
+      "types": "./dist/actionRunner.d.ts",
+      "import": "./dist/actionRunner.js",
+      "default": "./dist/actionRunner.js"
     },
-    "./codamaIdl": {
-      "types": "./dist/codamaIdl.d.ts",
-      "import": "./dist/codamaIdl.js",
-      "default": "./dist/codamaIdl.js"
+    "./directAccountsCoder": {
+      "types": "./dist/directAccountsCoder.d.ts",
+      "import": "./dist/directAccountsCoder.js",
+      "default": "./dist/directAccountsCoder.js"
     },
     "./metaComputeRegistry": {
       "types": "./dist/metaComputeRegistry.d.ts",

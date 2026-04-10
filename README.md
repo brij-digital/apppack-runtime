@@ -67,7 +67,9 @@ For a concrete description of the runtime layer, see:
 - `@brij-digital/apppack-runtime`
 - `@brij-digital/apppack-runtime/idlDeclarativeRuntime`
 - `@brij-digital/apppack-runtime/runtimeOperationRuntime`
-- `@brij-digital/apppack-runtime/idlRegistry`
+- `@brij-digital/apppack-runtime/actionRunner`
+- `@brij-digital/apppack-runtime/directAccountsCoder`
+- `@brij-digital/apppack-runtime/metaComputeRegistry`
 
 ## Scripts
 
@@ -85,13 +87,11 @@ npm run test
 
 ## Package Layout
 
-- `src/operationPackRuntime.ts`
-- `src/operationExecutionRuntime.ts`
 - `src/runtimeOperationRuntime.ts`
 - `src/idlDeclarativeRuntime.ts`
-- `src/metaComputeRegistry.ts`
 - `src/actionRunner.ts`
-- `src/codamaIdl.ts`
+- `src/directAccountsCoder.ts`
+- `src/metaComputeRegistry.ts`
 - `src/idlRegistry.ts`
 
 ## Versioning Notes

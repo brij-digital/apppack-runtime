@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { runActionRunner } from '../dist/index.js';
+import { runActionRunner } from '../dist/actionRunner.js';
 
 test('runActionRunner resolves step outputs through a linear pipeline', async () => {
   const executedSteps = [];
