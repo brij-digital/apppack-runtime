@@ -65,6 +65,8 @@ For a concrete description of the runtime layer, see:
 ## Exports
 
 - `@brij-digital/apppack-runtime`
+  Root export is intentionally small and limited to:
+  `previewIdlInstruction`, `explainRuntimeOperation`, `prepareRuntimeInstruction`, `prepareRuntimeOperation`, `runRuntimeView`
 - `@brij-digital/apppack-runtime/idlDeclarativeRuntime`
 - `@brij-digital/apppack-runtime/runtimeOperationRuntime`
 - `@brij-digital/apppack-runtime/actionRunner`

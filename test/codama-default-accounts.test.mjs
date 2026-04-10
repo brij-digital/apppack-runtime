@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PublicKey } from '@solana/web3.js';
-import { getInstructionTemplate, previewIdlInstruction } from '../dist/index.js';
+import { previewIdlInstruction } from '../dist/index.js';
+import { getInstructionTemplate } from '../dist/idlDeclarativeRuntime.js';
 
 const PROGRAM_ID = 'whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc';
 const MEMO_PROGRAM_ID = 'MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr';
