@@ -1,7 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { resolveAppUrl } from './appUrl.js';
-import { getProtocolById } from './idlRegistry.js';
 import bs58 from 'bs58';
 
 type JsonRecord = Record<string, unknown>;
@@ -72,51 +68,10 @@ export type CodamaTypeDef = {
     | unknown;
 };
 
-const codamaFetchCache = new Map<string, Promise<JsonRecord>>();
-const protocolCodamaCache = new Map<string, Promise<CodamaDocument>>();
 const instructionCache = new WeakMap<JsonRecord, CodamaInstructionDef[]>();
 const accountCache = new WeakMap<JsonRecord, CodamaAccountDef[]>();
 const typeDefCache = new WeakMap<JsonRecord, CodamaTypeDef[]>();
 const pdaCache = new WeakMap<JsonRecord, Map<string, { name: string; seeds: CodamaPdaSeedDef[]; programId?: string }>>();
-
-function resolveLocalRegistryPath(): string | null {
-  if (typeof window !== 'undefined') {
-    return null;
-  }
-  const explicit = typeof process !== 'undefined' && process.env
-    ? process.env.APPPACK_RUNTIME_REGISTRY_PATH
-    : undefined;
-  if (typeof explicit !== 'string' || explicit.trim().length === 0) {
-    return null;
-  }
-  return path.resolve(explicit.trim());
-}
-
-function readLocalJson<T>(absolutePath: string): T {
-  return JSON.parse(fs.readFileSync(absolutePath, 'utf8')) as T;
-}
-
-function resolveLocalJsonPath(localRegistryPath: string, filePath: string): string {
-  if (!filePath.startsWith('/')) {
-    throw new Error(`Local runtime registry only supports root-relative JSON paths. Got ${filePath}.`);
-  }
-
-  const registryDir = path.dirname(localRegistryPath);
-  if (filePath.startsWith('/idl/')) {
-    const relativePath = filePath.slice('/idl/'.length);
-    const siblingPath = path.resolve(registryDir, relativePath);
-    if (fs.existsSync(siblingPath)) {
-      return siblingPath;
-    }
-
-    const nestedIdlPath = path.resolve(registryDir, 'idl', relativePath);
-    if (fs.existsSync(nestedIdlPath)) {
-      return nestedIdlPath;
-    }
-  }
-
-  return path.resolve(registryDir, filePath.slice(1));
-}
 
 function asObject(value: unknown, label: string): JsonRecord {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -470,42 +425,6 @@ function convertAccountType(account: unknown, context: string): CodamaTypeDef {
 
 function getProgram(codama: CodamaDocument): JsonRecord {
   return asObject(asObject(codama, 'codama').program, 'codama.program');
-}
-
-async function loadJsonByPath<T>(filePath: string): Promise<T> {
-  const cacheKey = filePath;
-  if (!codamaFetchCache.has(cacheKey)) {
-    const localRegistryPath = resolveLocalRegistryPath();
-    if (localRegistryPath) {
-      const resolvedPath = resolveLocalJsonPath(localRegistryPath, filePath);
-      codamaFetchCache.set(cacheKey, Promise.resolve(readLocalJson<JsonRecord>(resolvedPath)));
-    } else {
-      codamaFetchCache.set(
-        cacheKey,
-        fetch(resolveAppUrl(filePath)).then(async (response) => {
-          if (!response.ok) {
-            throw new Error(`Failed to load JSON from ${filePath}.`);
-          }
-          return (await response.json()) as JsonRecord;
-        }),
-      );
-    }
-  }
-  return (await codamaFetchCache.get(cacheKey)!) as T;
-}
-
-export async function loadProtocolCodamaFromRuntime(protocolId: string): Promise<CodamaDocument> {
-  if (!protocolCodamaCache.has(protocolId)) {
-    protocolCodamaCache.set(
-      protocolId,
-      (async () => {
-        const protocol = await getProtocolById(protocolId);
-        const codamaPath = asString(protocol.codamaIdlPath, `${protocolId}.codamaIdlPath`);
-        return await loadJsonByPath<CodamaDocument>(codamaPath);
-      })(),
-    );
-  }
-  return await protocolCodamaCache.get(protocolId)!;
 }
 
 export function listCodamaInstructions(codama: CodamaDocument): CodamaInstructionDef[] {

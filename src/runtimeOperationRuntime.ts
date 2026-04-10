@@ -11,12 +11,12 @@ import { PublicKey } from '@solana/web3.js';
 import {
   getProtocolById,
   loadProtocolAgentRuntime,
+  loadProtocolCodamaDocument,
   type ProtocolManifest,
-} from './idlRegistry.js';
+} from './protocolLoader.js';
 import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
 import {
   findCodamaInstructionByName,
-  loadProtocolCodamaFromRuntime,
   type CodamaDocument as Idl,
   type CodamaInstructionAccountDef,
   type CodamaInstructionArgDef,
@@ -585,7 +585,7 @@ async function loadProtocolIdl(protocolId: string): Promise<Idl> {
   if (cached) {
     return cached;
   }
-  const parsed = await loadProtocolCodamaFromRuntime(protocolId);
+  const parsed = await loadProtocolCodamaDocument(protocolId);
   idlCache.set(protocolId, parsed);
   return parsed;
 }
@@ -1120,7 +1120,7 @@ async function hydrateWriteSpecsFromCodama(options: {
   writes: Record<string, AgentWriteSpec>;
   transforms: Record<string, unknown[]>;
 }): Promise<Record<string, AgentWriteSpec>> {
-  const codama = await loadProtocolCodamaFromRuntime(options.protocolId);
+  const codama = await loadProtocolCodamaDocument(options.protocolId);
   const nextWrites: Record<string, AgentWriteSpec> = {};
 
   for (const [operationId, writeSpec] of Object.entries(options.writes)) {

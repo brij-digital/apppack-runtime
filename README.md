@@ -89,10 +89,10 @@ npm run test
 
 - `src/runtimeOperationRuntime.ts`
 - `src/idlDeclarativeRuntime.ts`
+- `src/protocolLoader.ts`
 - `src/actionRunner.ts`
 - `src/directAccountsCoder.ts`
 - `src/metaComputeRegistry.ts`
-- `src/idlRegistry.ts`
 
 ## Versioning Notes
 

@@ -46,8 +46,8 @@ test('Codama loader reads local filesystem packs when APPPACK_RUNTIME_REGISTRY_P
 
   const script = `
     process.env.APPPACK_RUNTIME_REGISTRY_PATH = ${JSON.stringify(registryPath)};
-    const { loadProtocolCodamaFromRuntime } = await import(${JSON.stringify(path.resolve('dist/codamaIdl.js'))});
-    const doc = await loadProtocolCodamaFromRuntime('orca-whirlpool-mainnet');
+    const { loadProtocolCodamaDocument } = await import(${JSON.stringify(path.resolve('dist/protocolLoader.js'))});
+    const doc = await loadProtocolCodamaDocument('orca-whirlpool-mainnet');
     console.log(JSON.stringify(doc));
   `;
 

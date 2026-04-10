@@ -8,14 +8,14 @@ import {
 } from '@solana/web3.js';
 import {
   getProtocolById,
+  loadProtocolCodamaDocument,
   loadRegistry,
   type ProtocolManifest,
-} from './idlRegistry.js';
+} from './protocolLoader.js';
 import {
   findCodamaAccountByName,
   findCodamaInstructionByName,
   findCodamaTypeDefByName,
-  loadProtocolCodamaFromRuntime,
   type CodamaDocument as Idl,
   type CodamaInstructionAccountDefault,
 } from './codamaIdl.js';
@@ -413,7 +413,7 @@ async function loadProtocolAndIdl(protocolId: string): Promise<{ protocol: Proto
     };
   }
 
-  const parsed = await loadProtocolCodamaFromRuntime(protocolId);
+  const parsed = await loadProtocolCodamaDocument(protocolId);
   idlCache.set(protocol.id, parsed);
 
   return {
