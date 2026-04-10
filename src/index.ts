@@ -1,4 +1,4 @@
-export { previewIdlInstruction } from './idlDeclarativeRuntime.js';
+export { previewIdlInstruction } from './codamaFacade.js';
 export {
   explainRuntimeOperation,
   prepareRuntimeInstruction,

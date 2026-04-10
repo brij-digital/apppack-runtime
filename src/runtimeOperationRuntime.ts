@@ -14,7 +14,7 @@ import {
   loadProtocolCodamaDocument,
   type ProtocolManifest,
 } from './protocolLoader.js';
-import { previewIdlInstruction } from './idlDeclarativeRuntime.js';
+import { previewIdlInstruction } from './codamaFacade.js';
 import {
   findCodamaInstructionByName,
   type CodamaDocument as Idl,
