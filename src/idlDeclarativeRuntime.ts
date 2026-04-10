@@ -13,13 +13,11 @@ import {
   type ProtocolManifest,
 } from './protocolLoader.js';
 import {
-  findCodamaAccountByName,
   findCodamaInstructionByName,
   findCodamaTypeDefByName,
   type CodamaDocument as Idl,
   type CodamaInstructionAccountDefault,
 } from './codamaIdl.js';
-import { DirectAccountsCoder } from './directAccountsCoder.js';
 import { DirectInstructionCoder } from './directInstructionCoder.js';
 import { isBnLike } from './bnLike.js';
 
@@ -45,10 +43,6 @@ type IdlInstruction = {
   name: string;
   args: IdlInstructionArg[];
   accounts: IdlInstructionAccount[];
-};
-
-type IdlAccountDef = {
-  name: string;
 };
 
 type IdlTypeRef =
@@ -735,36 +729,6 @@ export async function getInstructionTemplate(options: {
     instruction: instruction.name,
     args: argsTemplate,
     accounts: accountsTemplate,
-  };
-}
-
-export async function decodeIdlAccount(options: {
-  protocolId: string;
-  accountType: string;
-  address: string;
-  connection: Connection;
-}): Promise<{ accountType: string; address: string; data: unknown }> {
-  const { idl } = await loadProtocolAndIdl(options.protocolId);
-
-  const resolvedAccount = findCodamaAccountByName(idl, options.accountType) as unknown as IdlAccountDef | null;
-
-  if (!resolvedAccount) {
-    throw new Error(`Account type ${options.accountType} not found in IDL.`);
-  }
-
-  const pubkey = new PublicKey(options.address);
-  const accountInfo = await options.connection.getAccountInfo(pubkey, 'confirmed');
-  if (!accountInfo) {
-    throw new Error(`Account ${options.address} not found on-chain.`);
-  }
-
-  const coder = new DirectAccountsCoder(idl);
-  const decoded = coder.decode(resolvedAccount.name, accountInfo.data);
-
-  return {
-    accountType: resolvedAccount.name,
-    address: options.address,
-    data: serializeForUi(decoded),
   };
 }
 
