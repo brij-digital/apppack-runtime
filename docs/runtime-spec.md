@@ -214,6 +214,10 @@ Write inputs are not declared explicitly in the runtime file.
 
 Instead, the visible write input surface is sourced from Codama and narrowed to the Codama args/accounts still referenced through `$input.*` inside the write.
 
+When a write needs extra helper inputs that are not part of the underlying Codama instruction shape, it may also declare `inputs` explicitly.
+
+This is meant for higher-level helper writes that still compile down to one Codama instruction, but need extra deterministic context during step preparation.
+
 ## `transforms`
 
 Top-level `transforms` is the only place where reusable transform fragments are declared.
@@ -262,6 +266,7 @@ The current runtime supports these important step families:
   - `wallet_pubkey`
   - `decode_account`
   - `decode_accounts`
+  - `account_infos`
   - `account_owner`
   - `token_accounts_by_owner`
   - `ata`
@@ -337,6 +342,23 @@ Returned rows are normalized objects with:
 - `uiAmountString`
 - `state`
 - `isNative`
+
+### `account_infos`
+
+Reads lightweight account existence / owner metadata for a batch of addresses.
+
+Required attributes:
+- `name`
+- `kind = "account_infos"`
+- `addresses`
+
+Returns normalized rows with:
+- `address`
+- `exists`
+- `owner`
+- `lamports`
+- `executable`
+- `dataLength`
 
 ## Scoped collection transforms
 

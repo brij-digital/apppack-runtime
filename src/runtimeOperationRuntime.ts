@@ -89,7 +89,7 @@ type AgentViewSpec = {
 
 type AgentWriteSpec = {
   instruction: string;
-  inputs?: Record<string, RuntimeInputSpec>;
+  inputs?: Record<string, RuntimeInputDecl>;
   steps?: RuntimeOperationStepSpec[];
   args?: Record<string, ArgBindingValue>;
   accounts?: Record<string, string>;
@@ -372,6 +372,15 @@ type ParsedTokenAccountRow = {
   uiAmountString: string | null;
   state: string | null;
   isNative: boolean | null;
+};
+
+type AccountInfoRow = {
+  address: string;
+  exists: boolean;
+  owner: string | null;
+  lamports: string | null;
+  executable: boolean | null;
+  dataLength: number | null;
 };
 
 const runtimePackCache = new Map<string, RuntimePack>();
@@ -779,6 +788,26 @@ async function runResolver(step: LoadStep, ctx: ResolverContext): Promise<unknow
       decoded.push(normalizeRuntimeValue(value));
     }
     return decoded;
+  }
+  if (step.kind === 'account_infos') {
+    const rawAddresses = resolveTemplateValue(step.addresses, ctx.scope);
+    if (!Array.isArray(rawAddresses)) {
+      throw new Error(`account_infos:${step.name}:addresses must resolve to an array.`);
+    }
+    const infos: AccountInfoRow[] = [];
+    for (let index = 0; index < rawAddresses.length; index += 1) {
+      const address = asPubkey(rawAddresses[index], `account_infos:${step.name}:addresses[${index}]`);
+      const info = await ctx.connection.getAccountInfo(address, 'confirmed');
+      infos.push({
+        address: address.toBase58(),
+        exists: info !== null,
+        owner: info ? info.owner.toBase58() : null,
+        lamports: info ? String(info.lamports) : null,
+        executable: info ? info.executable : null,
+        dataLength: info ? info.data.length : null,
+      });
+    }
+    return normalizeRuntimeValue(infos);
   }
   if (step.kind === 'account_owner') {
     const address = asPubkey(resolveTemplateValue(step.address, ctx.scope), `account_owner:${step.name}:address`);
@@ -1235,19 +1264,16 @@ async function hydrateWriteSpecsFromCodama(options: {
   const nextWrites: Record<string, AgentWriteSpec> = {};
 
   for (const [operationId, writeSpec] of Object.entries(options.writes)) {
-    if (writeSpec.inputs !== undefined) {
-      throw new Error(
-        `Write ${options.protocolId}/${operationId} must not declare inputs explicitly; write inputs are sourced from Codama.`,
-      );
-    }
-
     const instruction = findCodamaInstructionByName(codama, writeSpec.instruction);
     if (!instruction) {
       throw new Error(`Write ${options.protocolId}/${operationId} references unknown Codama instruction ${writeSpec.instruction}.`);
     }
 
-    const refs = [...collectWriteInputReferences(writeSpec, options.transforms)].sort();
-    const inputs = Object.fromEntries(
+    const explicitInputs = normalizeInputDeclMap(cloneJsonLike(writeSpec.inputs ?? {}));
+    const refs = [...collectWriteInputReferences(writeSpec, options.transforms)]
+      .filter((inputName) => !(inputName in explicitInputs))
+      .sort();
+    const codamaInputs = Object.fromEntries(
       refs.map((inputName) => [
         inputName,
         buildWriteInputSpecFromCodamaRef({
@@ -1263,7 +1289,10 @@ async function hydrateWriteSpecsFromCodama(options: {
 
     nextWrites[operationId] = {
       ...cloneJsonLike(writeSpec),
-      inputs,
+      inputs: {
+        ...codamaInputs,
+        ...explicitInputs,
+      },
     };
   }
 

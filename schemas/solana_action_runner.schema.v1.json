@@ -81,7 +81,8 @@
         "limit": {
           "type": "integer",
           "minimum": 1
-        }
+        },
+        "when": {}
       },
       "additionalProperties": false
     }

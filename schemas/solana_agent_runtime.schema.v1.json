@@ -254,6 +254,12 @@
         "instruction": {
           "type": "string"
         },
+        "inputs": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
         "steps": {
           "type": "array",
           "items": {
@@ -414,6 +420,26 @@
             },
             "account_type": {
               "type": "string"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "name",
+            "kind",
+            "addresses"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "kind": {
+              "const": "account_infos"
+            },
+            "addresses": {
+              "$ref": "#/$defs/jsonValue"
             }
           },
           "additionalProperties": false

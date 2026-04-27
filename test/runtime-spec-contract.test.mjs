@@ -468,3 +468,64 @@ test('loadRuntimePack rejects write inputs that are not sourced from Codama', ()
     /references non-Codama input non_codama_field for instruction execute_swap/i,
   );
 });
+
+test('loadRuntimePack accepts explicitly declared helper inputs on writes', () => {
+  const { registryPath } = writeFixture({
+    runtime: {
+      schema: 'solana-agent-runtime.v1',
+      protocol_id: 'spec-runtime-mainnet',
+      program_id: PROGRAM_ID,
+      codama_path: '/idl/spec.codama.json',
+      views: {},
+      writes: {
+        helper_write: {
+          instruction: 'execute_swap',
+          inputs: {
+            helper_seed: 'pubkey',
+          },
+          steps: [
+            {
+              name: 'vault',
+              kind: 'pda',
+              program_id: '$protocol.programId',
+              seeds: [
+                'utf8:vault',
+                '$input.helper_seed',
+              ],
+            },
+          ],
+          args: {
+            amount: '$input.amount',
+          },
+          accounts: {
+            target: '$input.target',
+            vault: '$vault',
+          },
+        },
+      },
+      transforms: {},
+    },
+  });
+
+  const script = `
+    process.env.APPPACK_RUNTIME_REGISTRY_PATH = ${JSON.stringify(registryPath)};
+    const runtime = await import(${JSON.stringify(path.resolve('dist/runtimeOperationRuntime.js'))});
+    const pack = await runtime.loadRuntimePack('spec-runtime-mainnet');
+    console.log(JSON.stringify(pack.writes.helper_write.inputs));
+  `;
+  const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], {
+    cwd: path.resolve('.'),
+    encoding: 'utf8',
+  });
+
+  if (result.status !== 0) {
+    throw new Error(result.stderr || result.stdout || `child process failed with code ${result.status}`);
+  }
+
+  const output = JSON.parse(result.stdout);
+  assert.deepEqual(output, {
+    amount: { type: 'u64' },
+    helper_seed: { type: 'pubkey' },
+    target: { type: 'pubkey' },
+  });
+});
