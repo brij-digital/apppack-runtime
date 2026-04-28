@@ -1179,6 +1179,18 @@
           ],
           "properties": {
             "kind": {
+              "const": "item_pubkey"
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
               "const": "item_i32_le"
             }
           },

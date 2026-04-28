@@ -33,6 +33,7 @@ type PdaSeedSpec =
   | { kind: 'utf8'; value: string }
   | { kind: 'pubkey'; value: unknown }
   | { kind: 'i32_le'; value: unknown }
+  | { kind: 'item_pubkey' }
   | { kind: 'item_i32_le' }
   | { kind: 'item_utf8' };
 
@@ -557,6 +558,9 @@ function encodePdaSeed(seed: PdaSeedSpec, item: unknown, label: string): Uint8Ar
     }
     return new TextEncoder().encode(String(item));
   }
+  if (seed.kind === 'item_pubkey') {
+    return asPubkey(item, `${label}:item`).toBuffer();
+  }
 
   const intValue = asSafeInteger(item, `${label}:item`);
   if (intValue < -2147483648 || intValue > 2147483647) {
@@ -584,6 +588,9 @@ function parseSeedSpec(raw: unknown, label: string): PdaSeedSpec {
   }
   if (kind === 'item_i32_le') {
     return { kind: 'item_i32_le' };
+  }
+  if (kind === 'item_pubkey') {
+    return { kind: 'item_pubkey' };
   }
   if (kind === 'item_utf8') {
     return { kind: 'item_utf8' };
